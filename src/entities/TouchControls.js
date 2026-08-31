@@ -90,15 +90,12 @@ export class TouchControls {
     }
 
     onDown(pointer, currentlyOver) {
-        // Only respond to touch pointers (mouse clicks go to normal aim/shoot)
-        if (pointer.pointerType !== 'touch') {
-            return;
-        }
+        if (pointer.pointerType !== 'touch') return;
 
         const x = pointer.x;
         const y = pointer.y;
+        const pid = pointer.id || 1;
 
-        // Check weapon buttons first
         for (let i = 0; i < this.weaponButtons.length; i++) {
             const b = this.weaponButtons[i];
             if (this.hitCircle(b, x, y)) {
@@ -107,30 +104,30 @@ export class TouchControls {
             }
         }
 
-        // Check action buttons
         if (this.hitCircle(this.btnShoot, x, y)) {
             this.state.shoot = true;
-            this.state.shootPressed = true;
-            this.setAimForButton(this.btnShoot);
+            this.btnShoot.touchId = pid;
             return;
         }
         if (this.hitCircle(this.btnJump, x, y)) {
             if (!this.state.jump) this.state.jumpPressed = true;
             this.state.jump = true;
+            this.btnJump.touchId = pid;
             return;
         }
         if (this.hitCircle(this.btnGrapple, x, y)) {
             this.state.grapple = true;
-            this.state.grapplePressed = true;
+            this.btnGrapple.touchId = pid;
             return;
         }
         if (this.hitCircle(this.btnReload, x, y)) {
             this.state.reloadPressed = true;
+            this.state.reload = true;
+            this.btnReload.touchId = pid;
             return;
         }
 
-        // Otherwise, joystick (movement)
-        this.joystickTouch = pointer.id || 1;
+        this.joystickTouch = pid;
         this.joyBase.setVisible(true).setPosition(x, y);
         this.joyKnob.setVisible(true).setPosition(x, y);
         this.joyOrigin = { x, y };
@@ -150,16 +147,18 @@ export class TouchControls {
 
             this.joyKnob.setPosition(this.joyOrigin.x + nx * clamp, this.joyOrigin.y + ny * clamp);
 
-            // Dead zone
             const dead = 10;
             const magnitude = Math.min(1, Math.max(0, (len - dead) / (max - dead)));
             this.state.left = nx < -0.3 && magnitude > 0.15;
             this.state.right = nx > 0.3 && magnitude > 0.15;
+            this.state.up = ny < -0.4 && magnitude > 0.3;
         }
     }
 
     onUp(pointer) {
-        if (this.joystickTouch !== null && (pointer.id || 1) === this.joystickTouch) {
+        const pid = pointer.id || 1;
+
+        if (this.joystickTouch !== null && pid === this.joystickTouch) {
             this.joystickTouch = null;
             this.joyBase.setVisible(false);
             this.joyKnob.setVisible(false);
@@ -167,10 +166,10 @@ export class TouchControls {
             this.state.right = false;
             this.state.anyTouch = false;
         }
-        // Release buttons
-        this.state.shoot = false;
-        this.state.jump = false;
-        this.state.grapple = false;
+        if (this.btnShoot.touchId === pid) { this.state.shoot = false; this.btnShoot.touchId = null; }
+        if (this.btnJump.touchId === pid) { this.state.jump = false; this.btnJump.touchId = null; }
+        if (this.btnGrapple.touchId === pid) { this.state.grapple = false; this.btnGrapple.touchId = null; }
+        if (this.btnReload.touchId === pid) { this.btnReload.touchId = null; }
     }
 
     setAimForButton() {
@@ -206,17 +205,10 @@ export class TouchControls {
 
     // Merge touch state into the keyboard cursors state passed to Player
     applyTo(state) {
-        // state is the cursors object passed to player.update
         state.left.isDown = state.left.isDown || this.state.left;
         state.right.isDown = state.right.isDown || this.state.right;
         state.up.isDown = state.up.isDown || this.state.jump;
         state.jump.isDown = state.jump.isDown || this.state.jump;
-        state.slide.isDown = false;
-        state.wallCling.isDown = false;
-
-        // Store shoot/grapple flags for GameScene to read
-        state._virtualShoot = this.state.shoot;
-        state._virtualGrapple = this.state.grapple;
         return state;
     }
 

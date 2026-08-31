@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { Player } from './Player.js';
 import { PLAYER_CONFIG } from '../utils/constants.js';
 

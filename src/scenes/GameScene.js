@@ -19,6 +19,7 @@ export class GameScene extends Phaser.Scene {
         this.weaponConfigs = WEAPON_CONFIG;
         this.mapData = JUNKYARD_MAP;
         this.cameras.main.setBounds(0, 0, this.mapData.width * 32, this.mapData.height * 32);
+        this.physics.world.setBounds(0, 0, this.mapData.width * 32, this.mapData.height * 32);
         this.cameras.main.setBackgroundColor(COLORS.BACKGROUND);
 
         // Build world

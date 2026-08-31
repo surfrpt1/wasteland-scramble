@@ -154,6 +154,23 @@ export class Player {
         if (this.grappleTimeout) { this.grappleTimeout.remove(); this.grappleTimeout = null; }
     }
 
+    fireGrapple(targetX, targetY) {
+        if (!this.isAlive || !this.canGrapple || this.grappleActive) return;
+        const dx = targetX - this.sprite.x;
+        const dy = targetY - this.sprite.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > GRAPPLE_CONFIG.MAX_DISTANCE) return;
+        this.grappleActive = true;
+        this.canGrapple = false;
+        this.grapplePoint = { x: targetX, y: targetY };
+        this.grappleTimeout = this.scene.time.delayedCall(1200, () => {
+            this.releaseGrapple();
+        });
+        this.scene.time.delayedCall(GRAPPLE_CONFIG.COOLDOWN, () => {
+            this.canGrapple = true;
+        });
+    }
+
     handleWallCling(cursors) {
         const body = this.sprite.body;
         const againstWall = body.blocked.left || body.blocked.right;
