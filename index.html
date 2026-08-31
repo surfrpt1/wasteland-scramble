@@ -2,17 +2,28 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Wasteland Scramble</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            user-select: none;
         }
-        body {
+        html, body {
             background: #1a0a00;
             overflow: hidden;
+            position: fixed;
+            inset: 0;
+            touch-action: none;
+            -ms-touch-action: none;
+            overscroll-behavior: none;
+        }
+        body {
             display: flex;
             justify-content: center;
             align-items: center;
@@ -25,6 +36,7 @@
         canvas {
             display: block;
             image-rendering: pixelated;
+            touch-action: none;
         }
     </style>
 </head>
