@@ -1,0 +1,19 @@
+{
+  "name": "wasteland-scramble",
+  "version": "0.1.0",
+  "description": "A post-apocalyptic 2D multiplayer arena shooter",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "npx vite --port 8080",
+    "build": "npx vite build",
+    "preview": "npx vite preview"
+  },
+  "keywords": ["game", "2d", "shooter", "multiplayer", "post-apocalyptic", "phaser"],
+  "license": "MIT",
+  "dependencies": {
+    "phaser": "^3.88.2"
+  },
+  "devDependencies": {
+    "vite": "^6.3.0"
+  }
+}
