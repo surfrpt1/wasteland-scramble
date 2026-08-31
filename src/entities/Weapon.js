@@ -19,6 +19,12 @@ export class WeaponSystem {
             classType: Phaser.Physics.Arcade.Image,
             maxSize: 100,
         });
+        // Remote bullets fired by OTHER online players. Simulated only on THIS
+        // client so they can collide with the local player's real body.
+        this.remoteProjectiles = scene.physics.add.group({
+            classType: Phaser.Physics.Arcade.Image,
+            maxSize: 100,
+        });
     }
 
     get config() {
@@ -108,8 +114,43 @@ export class WeaponSystem {
         return -Math.cos(angle) * cfg.recoil;
     }
 
-    createExplosion(x, y, radius, damage) {
-        const explosion = this.scene.add.image(x, y, 'explosion');
+    // Fire a bullet on behalf of a remote online player. Does NOT touch local
+    // ammo/reload state. The remote bullet stays in its own group so it can only
+    // collide with the local player (see GameScene online wiring).
+    fireRemote(x, y, angle, weaponKey) {
+        const cfg = WEAPON_CONFIG[weaponKey] || WEAPON_CONFIG.SCRAP_RIFLE;
+        const spread = (Math.random() - 0.5) * cfg.spread * 2;
+        const finalAngle = angle + spread;
+
+        const bullet = this.remoteProjectiles.get(x, y, 'bullet');
+        if (bullet) {
+            bullet.setActive(true).setVisible(true);
+            bullet.body.enable = true;
+            bullet.setTint(cfg.color);
+            bullet.setScale(cfg.explosive ? 1.5 : 1);
+
+            const vx = Math.cos(finalAngle) * cfg.bulletSpeed;
+            const vy = Math.sin(finalAngle) * cfg.bulletSpeed;
+            bullet.body.setVelocity(vx, vy);
+            bullet.setRotation(finalAngle);
+            bullet.damage = cfg.damage;
+            bullet.explosive = cfg.explosive || false;
+            bullet.explosionRadius = cfg.explosionRadius || 0;
+            bullet.weaponKey = weaponKey;
+
+            this.scene.time.delayedCall(cfg.bulletLifetime, () => {
+                if (bullet.active) {
+                    if (bullet.explosive) {
+                        this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
+                    }
+                    this.deactivateBullet(bullet, true);
+                }
+            });
+        }
+        return bullet;
+    }
+
+    createExplosion(x, y, radius, damage) {        const explosion = this.scene.add.image(x, y, 'explosion');
         explosion.setScale(radius / 16);
         explosion.setAlpha(0.8);
         explosion.setDepth(15);

@@ -6,12 +6,22 @@
   "scripts": {
     "dev": "npx vite --port 8080",
     "build": "npx vite build",
-    "preview": "npx vite preview"
+    "preview": "npx vite preview",
+    "server": "node server.mjs"
   },
-  "keywords": ["game", "2d", "shooter", "multiplayer", "post-apocalyptic", "phaser"],
+  "keywords": [
+    "game",
+    "2d",
+    "shooter",
+    "multiplayer",
+    "post-apocalyptic",
+    "phaser"
+  ],
   "license": "MIT",
   "dependencies": {
-    "phaser": "^3.88.2"
+    "phaser": "^3.88.2",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "vite": "^6.3.0"

@@ -44,19 +44,36 @@ export class Player {
         this.deadTint = 0x555555;
     }
 
-    update(cursors, pointer, time) {
+    update(cursors, pointer, time, ctl) {
         if (!this.isAlive) return;
 
-        this.handleMovement(cursors, time);
+        // ctl = explicit touch/override state (booleans). Merge with keyboard.
+        // Do NOT mutate Phaser Key objects (their isDown is reset by the keyboard
+        // plugin each frame, which is why on-screen touch movement never stuck).
+        const m = {
+            left: !!(ctl && ctl.left) || !!(cursors && cursors.left && cursors.left.isDown),
+            right: !!(ctl && ctl.right) || !!(cursors && cursors.right && cursors.right.isDown),
+            wallCling: !!(cursors && cursors.wallCling && cursors.wallCling.isDown),
+            slide: !!(cursors && cursors.slide && cursors.slide.isDown),
+        };
+        // Jump edge detection (fires once per press)
+        let jumpEdge = !!(ctl && ctl.jump);
+        if (cursors) {
+            if (Phaser.Input.Keyboard.JustDown(cursors.up)) jumpEdge = true;
+            if (Phaser.Input.Keyboard.JustDown(cursors.jump)) jumpEdge = true;
+        }
+        const jumpHeld = !!(ctl && ctl.jumpHeld) || !!(cursors && cursors.jump && cursors.jump.isDown);
+
+        this.handleMovement(m, jumpEdge, jumpHeld, time);
         this.handleGrapple(pointer);
-        this.handleWallCling(cursors);
-        this.handleSlide(cursors, time);
+        this.handleWallCling(m);
+        this.handleSlide(m, time);
         this.updateWeapon(pointer);
         this.updateBars();
         this.updateGrappleLine();
     }
 
-    handleMovement(cursors, time) {
+    handleMovement(m, jumpEdge, jumpHeld, time) {
         if (this.isSliding) return;
 
         const body = this.sprite.body;
@@ -84,11 +101,11 @@ export class Player {
         }
 
         // Horizontal
-        if (cursors.left.isDown) {
+        if (m.left) {
             body.setVelocityX(-speed);
             this.facingRight = false;
             this.sprite.setFlipX(true);
-        } else if (cursors.right.isDown) {
+        } else if (m.right) {
             body.setVelocityX(speed);
             this.facingRight = true;
             this.sprite.setFlipX(false);
@@ -96,14 +113,8 @@ export class Player {
             body.setVelocityX(body.velocity.x * 0.8);
         }
 
-        // Jump - supports Phaser keys + plain bot objects
-        const jumpIsDown = cursors.jump ? cursors.jump.isDown : false;
-        const jumpPressed = Phaser.Input.Keyboard.JustDown(cursors.up) ||
-            Phaser.Input.Keyboard.JustDown(cursors.jump) ||
-            (jumpIsDown && !this.lastJumpState);
-        this.lastJumpState = jumpIsDown;
-
-        if (jumpPressed) {
+        // Jump (jumpEdge fires once per press, jumpHeld stays true while held)
+        if (jumpEdge) {
             if (onGround || this.isWallClinging) {
                 let jf = PLAYER_CONFIG.JUMP_FORCE;
                 if (this.isWallClinging) {
@@ -171,11 +182,11 @@ export class Player {
         });
     }
 
-    handleWallCling(cursors) {
+    handleWallCling(m) {
         const body = this.sprite.body;
         const againstWall = body.blocked.left || body.blocked.right;
         const inAir = !body.blocked.down && !body.touching.down;
-        const wallClingPressed = cursors.wallCling && cursors.wallCling.isDown;
+        const wallClingPressed = m.wallCling;
 
         if (wallClingPressed && againstWall && inAir && !this.isWallClinging) {
             this.isWallClinging = true;
@@ -194,10 +205,10 @@ export class Player {
         }
     }
 
-    handleSlide(cursors, time) {
+    handleSlide(m, time) {
         const body = this.sprite.body;
         const onGround = body.blocked.down || body.touching.down;
-        const slideKey = cursors.slide && cursors.slide.isDown;
+        const slideKey = m.slide;
 
         if (slideKey && onGround && !this.isSliding) {
             this.isSliding = true;
@@ -298,6 +309,7 @@ export class Player {
         this.sprite.body.setVelocity(0, 0);
         this.weaponSprite.setVisible(true);
         this.releaseGrapple();
+        this.scene.events.emit('playerRespawned', this, s.x, s.y);
     }
 
     destroy() {

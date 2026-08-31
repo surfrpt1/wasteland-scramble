@@ -41,6 +41,10 @@ export class MenuScene extends Phaser.Scene {
             this.scene.start('GameScene', { mode: 'practice' });
         });
 
+        this.createButton(cx, cy + 160, 'ONLINE (EXPERIMENTAL)', () => {
+            this.scene.start('LobbyScene');
+        });
+
         // Controls info
         const controlsStyle = {
             fontSize: '14px',

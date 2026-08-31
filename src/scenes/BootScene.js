@@ -250,12 +250,15 @@ export class BootScene extends Phaser.Scene {
 
         // Ground tile
         g.clear();
-        g.fillStyle(0x4a382f, 1);
+        g.fillStyle(0x5c462f, 1);
         g.fillRect(0, 0, 32, 4);
-        g.fillStyle(COLORS.GROUND, 1);
+        g.fillStyle(0x6a4f35, 1);
         g.fillRect(0, 4, 32, 28);
+        // lighter top edge highlight so platform outlines read clearly
+        g.fillStyle(0x8a6a45, 1);
+        g.fillRect(0, 0, 32, 3);
         // rust spots
-        g.fillStyle(0x8a6a4a, 0.4);
+        g.fillStyle(0x9a7a4a, 0.4);
         for (let i = 0; i < 4; i++) {
             g.fillRect(Math.random() * 24, 6 + Math.random() * 20, 4 + Math.random() * 6, 3);
         }
@@ -347,12 +350,15 @@ export class BootScene extends Phaser.Scene {
     generateDecorations(g) {
         // Grassy ground tile (different from dirt) - brown dirt with grass top
         g.clear();
-        g.fillStyle(0x4a6a2f, 1);         // grass top
+        g.fillStyle(0x5a8a37, 1);         // grass top
         g.fillRect(0, 0, 32, 6);
-        g.fillStyle(0x5a3a20, 1);         // dirt below
+        g.fillStyle(0x6f4a28, 1);         // dirt below
         g.fillRect(0, 6, 32, 26);
+        // lighter top edge highlight for platform readability
+        g.fillStyle(0x8ac24a, 1);
+        g.fillRect(0, 0, 32, 3);
         // grass blades
-        g.fillStyle(0x6f9a44, 1);
+        g.fillStyle(0x8abf54, 1);
         for (let x = 2; x < 32; x += 6) {
             g.fillRect(x, 0, 2, 4 + Math.random() * 3);
         }
@@ -374,28 +380,32 @@ export class BootScene extends Phaser.Scene {
         g.generateTexture('grass_tuft', 30, 18);
 
         // Stone / rock (decor, walkable obstacle)
+        // NOTE: texture is 40x30 and the physics body fills the whole texture,
+        // so the visible rock must fill the same area (apex at very top) or
+        // characters appear to stand on invisible geometry.
         g.clear();
-        g.fillStyle(0x8f8f8f, 1);
-        g.fillEllipse(20, 40, 40, 30);
-        g.fillStyle(0x7a7a7a, 1);
-        g.fillEllipse(20, 44, 34, 18);
-        g.fillStyle(0xa8a8a8, 1);
-        g.fillEllipse(14, 34, 16, 10);
+        g.fillStyle(0x9a9a92, 1);
+        g.fillEllipse(20, 16, 40, 30);   // main dome fills the whole footprint
+        g.fillStyle(0x7d7d78, 1);
+        g.fillEllipse(20, 22, 34, 18);
+        g.fillStyle(0xb0b0a8, 1);
+        g.fillEllipse(14, 13, 16, 10);
         // cracks
-        g.lineStyle(1, 0x5a5a5a, 0.7);
-        g.lineBetween(2, 40, 12, 34);
-        g.lineBetween(12, 34, 18, 38);
-        g.lineBetween(24, 42, 34, 36);
+        g.lineStyle(1, 0x555550, 0.8);
+        g.lineBetween(6, 22, 16, 18);
+        g.lineBetween(16, 18, 22, 22);
+        g.lineBetween(28, 16, 34, 22);
+        g.lineBetween(10, 28, 20, 26);
         g.generateTexture('stone', 40, 30);
 
         // Small stone (decor)
         g.clear();
-        g.fillStyle(0x9a9a9a, 1);
-        g.fillEllipse(12, 10, 24, 12);
-        g.fillStyle(0x777777, 1);
-        g.fillEllipse(12, 12, 18, 7);
-        g.fillStyle(0xb0b0b0, 1);
-        g.fillEllipse(9, 8, 10, 5);
+        g.fillStyle(0xa0a098, 1);
+        g.fillEllipse(12, 6.5, 24, 13);   // fills footprint, apex near top
+        g.fillStyle(0x7c7c76, 1);
+        g.fillEllipse(12, 7.5, 18, 8);
+        g.fillStyle(0xb8b8ae, 1);
+        g.fillEllipse(9, 5, 10, 5);
         g.generateTexture('stone_small', 24, 13);
 
         // Broken crate (decor/cover)
