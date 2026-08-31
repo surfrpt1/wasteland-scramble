@@ -1,87 +1,165 @@
-import { GAME_CONFIG, PLAYER_CONFIG } from '../utils/constants.js';
+import { PLAYER_CONFIG } from '../utils/constants.js';
 
 const T = 32;
 
 export const JUNKYARD_MAP = {
-    name: 'Junkyard',
+    name: 'Ruined Fields',
     width: 80,
     height: 30,
     spawnPoints: [
-        { x: 5 * T, y: 25 * T },
-        { x: 40 * T, y: 25 * T },
-        { x: 75 * T, y: 25 * T },
-        { x: 20 * T, y: 15 * T },
-        { x: 60 * T, y: 15 * T },
-        { x: 40 * T, y: 5 * T },
+        { x: 6 * T, y: 26 * T },
+        { x: 40 * T, y: 26 * T },
+        { x: 74 * T, y: 26 * T },
+        { x: 20 * T, y: 16 * T },
+        { x: 60 * T, y: 16 * T },
+        { x: 40 * T, y: 6 * T },
     ],
     platforms: [
-        // Ground
-        { x: 0, y: 28, w: 80, h: 2, type: 'ground' },
+        // Ground - grass top
+        { x: 0, y: 28, w: 80, h: 2, type: 'grass' },
 
-        // Bottom platforms
-        { x: 8, y: 25, w: 6, h: 1, type: 'ground' },
-        { x: 22, y: 25, w: 5, h: 1, type: 'ground' },
-        { x: 50, y: 25, w: 6, h: 1, type: 'ground' },
-        { x: 65, y: 25, w: 5, h: 1, type: 'ground' },
+        // Dirt mounds / grassy steps (hills)
+        { x: 4, y: 25, w: 6, h: 1, type: 'grass' },
+        { x: 22, y: 25, w: 5, h: 1, type: 'grass' },
+        { x: 49, y: 25, w: 6, h: 1, type: 'grass' },
+        { x: 66, y: 25, w: 6, h: 1, type: 'grass' },
 
-        // Mid platforms
-        { x: 15, y: 20, w: 8, h: 1, type: 'wall' },
-        { x: 35, y: 20, w: 10, h: 1, type: 'ground' },
-        { x: 55, y: 20, w: 8, h: 1, type: 'wall' },
-        { x: 4, y: 18, w: 4, h: 4, type: 'wall' },
-        { x: 72, y: 18, w: 4, h: 4, type: 'wall' },
+        // Rock ledges (mid level)
+        { x: 14, y: 19, w: 16, h: 1, type: 'stone' },
+        { x: 48, y: 19, w: 16, h: 1, type: 'stone' },
 
-        // Upper platforms
-        { x: 10, y: 14, w: 6, h: 1, type: 'ground' },
-        { x: 30, y: 13, w: 8, h: 1, type: 'wall' },
-        { x: 50, y: 14, w: 6, h: 1, type: 'ground' },
-        { x: 68, y: 13, w: 6, h: 1, type: 'wall' },
+        // Upper rock platforms
+        { x: 8, y: 13, w: 8, h: 1, type: 'stone' },
+        { x: 30, y: 12, w: 22, h: 1, type: 'grass' },
+        { x: 64, y: 13, w: 8, h: 1, type: 'stone' },
 
-        // High platforms
-        { x: 20, y: 8, w: 5, h: 1, type: 'ground' },
-        { x: 40, y: 6, w: 6, h: 1, type: 'wall' },
-        { x: 58, y: 8, w: 5, h: 1, type: 'ground' },
+        // High perches
+        { x: 20, y: 6, w: 10, h: 1, type: 'stone' },
+        { x: 52, y: 6, w: 10, h: 1, type: 'stone' },
 
-        // Walls
-        { x: 0, y: 0, w: 1, h: 28, type: 'wall' },
-        { x: 79, y: 0, w: 1, h: 28, type: 'wall' },
+        // Boundary walls (invisible - keeps players in)
+        { x: 0, y: 0, w: 1, h: 28, type: 'barrier' },
+        { x: 79, y: 0, w: 1, h: 28, type: 'barrier' },
+    ],
+    // Solid obstacles placed on the map (stones, crates, barrels)
+    obstacles: [
+        // Rocks (stones)
+        { x: 10 * T, y: 27 * T, type: 'stone' },
+        { x: 30 * T, y: 27 * T, type: 'stone_small' },
+        { x: 46 * T, y: 27 * T, type: 'stone' },
+        { x: 62 * T, y: 27 * T, type: 'stone_small' },
+        { x: 18 * T, y: 18 * T, type: 'stone_small' },
+        { x: 36 * T, y: 18 * T, type: 'stone' },
+        { x: 55 * T, y: 18 * T, type: 'stone_small' },
+        { x: 10 * T, y: 12 * T, type: 'stone' },
+        { x: 26 * T, y: 11 * T, type: 'stone_small' },
+        { x: 70 * T, y: 12 * T, type: 'stone' },
 
-        // Pipe structures
-        { x: 28, y: 16, w: 2, h: 6, type: 'wall' },
-        { x: 52, y: 16, w: 2, h: 6, type: 'wall' },
+        // Crates (cover)
+        { x: 14 * T, y: 27 * T, type: 'crate' },
+        { x: 56 * T, y: 27 * T, type: 'crate' },
+        { x: 26 * T, y: 24 * T, type: 'crate' },
+        { x: 52 * T, y: 24 * T, type: 'crate' },
+        { x: 34 * T, y: 17 * T, type: 'crate' },
+        { x: 46 * T, y: 17 * T, type: 'crate' },
+
+        // Barrels (cover)
+        { x: 20 * T, y: 27 * T, type: 'barrel' },
+        { x: 62 * T, y: 27 * T, type: 'barrel' },
+        { x: 40 * T, y: 24 * T, type: 'barrel' },
+        { x: 8 * T, y: 24 * T, type: 'barrel' },
+        { x: 72 * T, y: 24 * T, type: 'barrel' },
+    ],
+    // Purely decorative grass tufts (no collision)
+    decor: [
+        { x: 3 * T, y: 27 * T, type: 'grass_tuft' },
+        { x: 12 * T, y: 27 * T, type: 'grass_tuft' },
+        { x: 25 * T, y: 27 * T, type: 'grass_tuft' },
+        { x: 34 * T, y: 27 * T, type: 'grass_tuft' },
+        { x: 58 * T, y: 27 * T, type: 'grass_tuft' },
+        { x: 70 * T, y: 27 * T, type: 'grass_tuft' },
+        { x: 76 * T, y: 27 * T, type: 'grass_tuft' },
+        { x: 7 * T, y: 24 * T, type: 'grass_tuft' },
+        { x: 48 * T, y: 24 * T, type: 'grass_tuft' },
+        { x: 42 * T, y: 23 * T, type: 'grass_tuft' },
+        { x: 8 * T, y: 12 * T, type: 'grass_tuft' },
+        { x: 64 * T, y: 12 * T, type: 'grass_tuft' },
+        { x: 31 * T, y: 11 * T, type: 'grass_tuft' },
+        { x: 52 * T, y: 12 * T, type: 'grass_tuft' },
     ],
     radZones: [
-        { x: 38, y: 22, w: 8, h: 6 },
-        { x: 60, y: 10, w: 6, h: 4 },
+        { x: 36, y: 22, w: 8, h: 5 },
+        { x: 60, y: 9, w: 6, h: 3 },
     ],
     pickups: [
-        { x: 12 * T, y: 13 * T, type: 'health' },
+        { x: 12 * T, y: 12 * T, type: 'health' },
         { x: 40 * T, y: 5 * T, type: 'weapon', weapon: 'PIPE_BOMB' },
         { x: 68 * T, y: 12 * T, type: 'weapon', weapon: 'ACID_SPRAYER' },
-        { x: 25 * T, y: 19 * T, type: 'health' },
-        { x: 55 * T, y: 19 * T, type: 'weapon', weapon: 'NAIL_GUN' },
-        { x: 75 * T, y: 24 * T, type: 'health' },
+        { x: 24 * T, y: 24 * T, type: 'health' },
+        { x: 38 * T, y: 18 * T, type: 'weapon', weapon: 'NAIL_GUN' },
+        { x: 74 * T, y: 26 * T, type: 'health' },
     ],
 };
 
 export function buildMap(scene, mapData) {
     const platforms = scene.physics.add.staticGroup();
 
+    // Platform tiles
     for (const p of mapData.platforms) {
-        for (let dx = 0; dx < p.w; dx++) {
-            for (let dy = 0; dy < p.h; dy++) {
-                const tileKey = p.type === 'wall' ? 'wall' : 'ground';
-                const tile = platforms.create(
-                    (p.x + dx) * T + T / 2,
-                    (p.y + dy) * T + T / 2,
-                    tileKey
-                );
-                tile.refreshBody();
+        let tileKey = 'ground';
+        if (p.type === 'grass') tileKey = 'ground_grass';
+        else if (p.type === 'stone') tileKey = 'ground_grass';
+        else if (p.type === 'barrier') tileKey = null; // barriers handled separately
+
+        if (tileKey) {
+            for (let dx = 0; dx < p.w; dx++) {
+                for (let dy = 0; dy < p.h; dy++) {
+                    const tile = platforms.create(
+                        (p.x + dx) * T + T / 2,
+                        (p.y + dy) * T + T / 2,
+                        tileKey
+                    );
+                    tile.refreshBody();
+                }
             }
         }
     }
 
-    return platforms;
+    // Obstacles (stones, crates, barrels) - solid collision
+    const obstacles = scene.physics.add.staticGroup();
+    for (const o of mapData.obstacles) {
+        const obj = obstacles.create(o.x, o.y, o.type);
+        obj.refreshBody();
+    }
+
+    // Invisible boundary walls
+    for (const p of mapData.platforms) {
+        if (p.type === 'barrier') {
+            const wall = scene.physics.add.staticRectangle(
+                (p.x * T) + (p.w * T) / 2,
+                (p.y * T) + (p.h * T) / 2,
+                p.w * T, p.h * T
+            );
+            obstacles.add(wall);
+        }
+    }
+
+    return { platforms, obstacles };
+}
+
+export function buildDecor(scene, mapData) {
+    for (const d of mapData.decor) {
+        const img = scene.add.image(d.x, d.y, d.type);
+        img.setDepth(2);
+        scene.tweens.add({
+            targets: img,
+            scaleX: { from: 0.9, to: 1 },
+            duration: 500 + Math.random() * 500,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+        });
+    }
 }
 
 export function buildRadZones(scene, mapData) {

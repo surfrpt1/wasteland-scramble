@@ -51,8 +51,8 @@ export class MenuScene extends Phaser.Scene {
         this.add.text(cx, GAME_CONFIG.HEIGHT - 80, [
             'CONTROLS:',
             'WASD - Move    |    MOUSE - Aim & Shoot',
-            'RIGHT CLICK - Grapple Hook    |    SPACE - Jump',
-            'SHIFT - Slide    |    Q - Wall Cling',
+            'R - Reload    |    RIGHT CLICK - Grapple Hook    |    SPACE - Jump',
+            'SHIFT - Slide    |    Q - Wall Cling    |    1-4 - Switch Weapons',
         ].join('\n'), controlsStyle).setOrigin(0.5);
 
         this.add.text(cx, GAME_CONFIG.HEIGHT - 20, 'v0.1.0 - Prototype', {

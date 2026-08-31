@@ -7,24 +7,24 @@ export const GAME_CONFIG = {
 };
 
 export const PLAYER_CONFIG = {
-    SPEED: 250,
-    JUMP_FORCE: -420,
+    SPEED: 280,
+    JUMP_FORCE: -480,
     MAX_HEALTH: 100,
     MAX_RAD: 100,
-    WIDTH: 28,
-    HEIGHT: 40,
+    WIDTH: 22,
+    HEIGHT: 34,
     COLOR: 0x44aa44,
-    WALL_CLING_DURATION: 1500,
+    WALL_CLING_DURATION: 2000,
     WALL_CLING_FALL_SPEED: 50,
-    SLIDE_SPEED: 400,
-    SLIDE_DURATION: 300,
+    SLIDE_SPEED: 500,
+    SLIDE_DURATION: 350,
 };
 
 export const GRAPPLE_CONFIG = {
     SPEED: 1200,
-    MAX_DISTANCE: 350,
-    PULL_FORCE: 600,
-    COOLDOWN: 500,
+    MAX_DISTANCE: 500,
+    PULL_FORCE: 900,
+    COOLDOWN: 400,
     COLOR: 0xccaa44,
     WIDTH: 3,
 };
@@ -40,6 +40,8 @@ export const WEAPON_CONFIG = {
         ammo: 30,
         recoil: 80,
         color: 0xffaa00,
+        sprite: 'weapon_rifle',
+        reloadTime: 1400,
     },
     NAIL_GUN: {
         name: 'Nail Gun',
@@ -51,6 +53,8 @@ export const WEAPON_CONFIG = {
         ammo: 60,
         recoil: 30,
         color: 0xcccccc,
+        sprite: 'weapon_naigun',
+        reloadTime: 1800,
     },
     PIPE_BOMB: {
         name: 'Pipe Bomb',
@@ -64,6 +68,8 @@ export const WEAPON_CONFIG = {
         color: 0xff4400,
         explosive: true,
         explosionRadius: 80,
+        sprite: 'weapon_pipebomb',
+        reloadTime: 2500,
     },
     ACID_SPRAYER: {
         name: 'Acid Sprayer',
@@ -75,6 +81,8 @@ export const WEAPON_CONFIG = {
         ammo: 100,
         recoil: 10,
         color: 0x44ff44,
+        sprite: 'weapon_acid',
+        reloadTime: 2200,
     },
 };
 
