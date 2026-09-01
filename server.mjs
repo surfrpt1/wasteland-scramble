@@ -25,6 +25,7 @@ const MAX_SPEED = 600;           // sanity cap on reported position delta/tick
 const MAX_RANGE = 1000;          // max bullet travel we'll honour for a weapon
 const WORLD_W = 80 * 32;         // map width in px
 const WORLD_H = 30 * 32;         // map height in px
+const COUNTDOWN_SECONDS = 5;     // countdown before game starts
 
 // Solid geometry for bullet/wall collision (mirrors the client map).
 const COLLIDERS = buildColliders();
@@ -59,9 +60,9 @@ const server = createServer(async (req, res) => {
 
 const io = new SocketServer(server, { cors: { origin: '*' } });
 
-// rooms: name -> { clients:Set, scores:Map(id->kills), playerIndex:Map(id->int),
-//                  state:Map(id->{x,y,angle,weapon}), hp:Map(id->{hp,alive,lastFire}),
-//                  bullets:[] }
+// rooms: name -> { clients, scores, playerIndex, state, hp, bullets,
+//                  names, host, gameState, gameDuration, gameStartTime,
+//                  countdownTimer, countdownInterval }
 const rooms = new Map();
 const members = new Map(); // socketId -> { room }
 
@@ -79,7 +80,12 @@ function playerIndexFor(room) {
 function serializeScores(room) {
     const out = [];
     for (const [id, kills] of room.scores) {
-        out.push({ id, playerIndex: room.playerIndex.get(id), kills });
+        out.push({
+            id,
+            playerIndex: room.playerIndex.get(id),
+            kills,
+            name: room.names.get(id) || `P${(room.playerIndex.get(id) || 0) + 1}`,
+        });
     }
     return out;
 }
@@ -91,6 +97,27 @@ function emitRoom(roomName, event, payload) {
         const s = io.sockets.sockets.get(id);
         if (s) s.emit(event, payload);
     }
+}
+
+function broadcastRoomPlayers(roomName) {
+    const room = rooms.get(roomName);
+    if (!room) return;
+    const players = [];
+    for (const id of room.clients) {
+        players.push({
+            id,
+            playerIndex: room.playerIndex.get(id),
+            name: room.names.get(id) || `P${(room.playerIndex.get(id) || 0) + 1}`,
+            isHost: id === room.host,
+        });
+    }
+    emitRoom(roomName, 'room-players', {
+        players,
+        host: room.host,
+        gameState: room.gameState,
+        gameDuration: room.gameDuration,
+        killLimit: KILL_LIMIT,
+    });
 }
 
 function broadcastScores(roomName) {
@@ -114,13 +141,66 @@ function broadcastHP(roomName) {
     emitRoom(roomName, 'hp-update', { players: hpSnapshot(roomName) });
 }
 
+function endMatch(roomName, room, winnerId) {
+    if (room.gameState !== 'playing') return;
+    room.gameState = 'ended';
+    // Build rankings sorted by kills descending
+    const scores = serializeScores(room);
+    scores.sort((a, b) => b.kills - a.kills);
+    const rankings = scores.map((s, i) => ({
+        rank: i + 1,
+        id: s.id,
+        name: s.name,
+        playerIndex: s.playerIndex,
+        kills: s.kills,
+        isWinner: i === 0,
+    }));
+    emitRoom(roomName, 'match-end', {
+        winnerId,
+        scores,
+        rankings,
+        gameDuration: room.gameDuration,
+    });
+    broadcastRoomPlayers(roomName);
+}
+
 function checkWin(roomName, room) {
     for (const [id, kills] of room.scores) {
         if (kills >= KILL_LIMIT) {
-            emitRoom(roomName, 'match-end', { winnerId: id, scores: serializeScores(room) });
-            return;
+            endMatch(roomName, room, id);
+            return true;
         }
     }
+    return false;
+}
+
+function startCountdown(roomName, room) {
+    if (room.gameState !== 'waiting') return;
+    room.gameState = 'countdown';
+    let remaining = COUNTDOWN_SECONDS;
+    broadcastRoomPlayers(roomName);
+    emitRoom(roomName, 'countdown', { seconds: remaining });
+    room.countdownInterval = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(room.countdownInterval);
+            room.countdownInterval = null;
+            room.gameState = 'playing';
+            room.gameStartTime = Date.now();
+            emitRoom(roomName, 'game-start', {
+                gameDuration: room.gameDuration,
+                killLimit: KILL_LIMIT,
+                startTime: room.gameStartTime,
+            });
+            broadcastRoomPlayers(roomName);
+        } else {
+            emitRoom(roomName, 'countdown', { seconds: remaining });
+        }
+    }, 1000);
+}
+
+function cleanupRoomTimers(room) {
+    if (room.countdownInterval) { clearInterval(room.countdownInterval); room.countdownInterval = null; }
 }
 
 io.on('connection', (socket) => {
@@ -129,7 +209,12 @@ io.on('connection', (socket) => {
     socket.on('list-rooms', (cb) => {
         const list = [];
         for (const [name, room] of rooms) {
-            list.push({ name, players: room.clients.size, count: room.clients.size });
+            list.push({
+                name,
+                players: room.clients.size,
+                count: room.clients.size,
+                gameState: room.gameState,
+            });
         }
         if (cb) cb(list);
     });
@@ -137,8 +222,19 @@ io.on('connection', (socket) => {
     socket.on('join-room', (name, cb) => {
         const clean = String(name || '').trim().slice(0, 24) || 'default';
         if (!rooms.has(clean)) rooms.set(clean, {
-            clients: new Set(), scores: new Map(), playerIndex: new Map(),
-            state: new Map(), hp: new Map(), bullets: [],
+            clients: new Set(),
+            scores: new Map(),
+            playerIndex: new Map(),
+            state: new Map(),
+            hp: new Map(),
+            bullets: [],
+            names: new Map(),
+            host: null,
+            gameState: 'waiting',
+            gameDuration: 600,
+            gameStartTime: null,
+            countdownTimer: null,
+            countdownInterval: null,
         });
         const room = rooms.get(clean);
         const prev = roomOf(socket.id);
@@ -148,27 +244,73 @@ io.on('connection', (socket) => {
             room.scores.set(socket.id, 0);
             room.hp.set(socket.id, { hp: MAX_HEALTH, alive: true, lastFire: 0 });
             room.state.set(socket.id, null);
+            room.names.set(socket.id, `P${room.playerIndex.get(socket.id) + 1}`);
         }
         room.clients.add(socket.id);
         members.set(socket.id, { room: clean });
         socket.join(clean);
 
+        // Assign host to first player if none
+        if (!room.host || !room.clients.has(room.host)) {
+            room.host = socket.id;
+        }
+
         const world = [];
         for (const [id, st] of room.state) {
             if (id !== socket.id && st) {
-                world.push({ id, playerIndex: room.playerIndex.get(id), ...st });
+                world.push({
+                    id,
+                    playerIndex: room.playerIndex.get(id),
+                    name: room.names.get(id) || `P${(room.playerIndex.get(id) || 0) + 1}`,
+                    ...st,
+                });
             }
         }
         socket.emit('match-joined', {
             room: clean,
             playerIndex: room.playerIndex.get(socket.id),
+            name: room.names.get(socket.id),
             world,
             scores: serializeScores(room),
             hp: hpSnapshot(clean),
             killLimit: KILL_LIMIT,
+            host: room.host,
+            gameState: room.gameState,
+            gameDuration: room.gameDuration,
         });
         if (cb) cb({ ok: 1, room: clean });
         console.log(`   joined room "${clean}" as P${room.playerIndex.get(socket.id)} (${room.clients.size} players)`);
+
+        broadcastRoomPlayers(clean);
+    });
+
+    socket.on('set-name', (name) => {
+        const roomName = roomOf(socket.id);
+        const room = roomName && rooms.get(roomName);
+        if (!room) return;
+        const clean = String(name || '').trim().slice(0, 16) || `P${(room.playerIndex.get(socket.id) || 0) + 1}`;
+        room.names.set(socket.id, clean);
+        broadcastRoomPlayers(roomName);
+    });
+
+    socket.on('set-time-limit', (seconds) => {
+        const roomName = roomOf(socket.id);
+        const room = roomName && rooms.get(roomName);
+        if (!room) return;
+        if (socket.id !== room.host) return;
+        if (room.gameState !== 'waiting') return;
+        const valid = [300, 600, 900]; // 5, 10, 15 minutes
+        room.gameDuration = valid.includes(seconds) ? seconds : 600;
+        broadcastRoomPlayers(roomName);
+    });
+
+    socket.on('start-game', () => {
+        const roomName = roomOf(socket.id);
+        const room = roomName && rooms.get(roomName);
+        if (!room) return;
+        if (socket.id !== room.host) return;
+        if (room.clients.size < 1) return;
+        startCountdown(roomName, room);
     });
 
     socket.on('leave-room', () => leaveRoom(socket));
@@ -177,8 +319,8 @@ io.on('connection', (socket) => {
         const roomName = roomOf(socket.id);
         const room = roomName && rooms.get(roomName);
         if (!room) return;
+        if (room.gameState !== 'playing') return;
         const cur = room.state.get(socket.id);
-        // Clamp movement so you cannot teleport arbitrarily far between ticks.
         let x = Number(state.x) || 0, y = Number(state.y) || 0;
         if (cur && cur.x !== undefined) {
             const dx = x - cur.x, dy = y - cur.y;
@@ -201,22 +343,16 @@ io.on('connection', (socket) => {
         const roomName = roomOf(socket.id);
         const room = roomName && rooms.get(roomName);
         if (!room) return;
+        if (room.gameState !== 'playing') return;
         const hp = room.hp.get(socket.id);
         if (!hp || !hp.alive) return;
         const st = room.state.get(socket.id);
         if (!st) return;
         const wcfg = WEAPONS[data && data.weapon] || WEAPONS.SCRAP_RIFLE;
         const now = Date.now();
-        // Server-side fire-rate limit prevents spray cheats.
         if (now - hp.lastFire < wcfg.fireRate) return;
         hp.lastFire = now;
 
-        // Reject only egregious teleport-origin shots. The bullet ALWAYS spawns at
-        // the server's own stored position (st.x/st.y) below, so this is just a
-        // sanity gate against absurd clients. It must be generous: under real
-        // network latency a moving player's on-screen position legitimately leads
-        // the server's last-stored position by >60px, and a tight tolerance was
-        // silently dropping most in-play shots (so kills never registered).
         const angle = Number(data.angle) || 0;
         const sx = st.x, sy = st.y - 8;
         if (data.x !== undefined && data.y !== undefined) {
@@ -234,8 +370,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Client respawned itself (after death). Server re-activates authority and
-    // resets the movement-clamp baseline to the reported respawn position.
     socket.on('player-respawn', (data) => {
         const roomName = roomOf(socket.id);
         const room = roomName && rooms.get(roomName);
@@ -276,10 +410,24 @@ function leaveRoom(socket) {
         room.scores.delete(socket.id);
         room.state.delete(socket.id);
         room.hp.delete(socket.id);
+        room.names.delete(socket.id);
         socket.to(roomName).emit('player-left', socket.id);
+
+        // Reassign host if needed
+        if (room.host === socket.id) {
+            room.host = room.clients.values().next().value || null;
+            // If game was playing and host left, end the match
+            if (room.gameState === 'playing' && room.host) {
+                // Game continues, just reassign host for lobby purposes
+            }
+        }
+
         if (room.clients.size === 0) {
+            cleanupRoomTimers(room);
             rooms.delete(roomName);
             console.log(`   room "${roomName}" closed (empty)`);
+        } else {
+            broadcastRoomPlayers(roomName);
         }
     }
 }
@@ -287,11 +435,25 @@ function leaveRoom(socket) {
 // Broadcast + ballistics simulation loop.
 setInterval(() => {
     for (const [roomName, room] of rooms) {
+        if (room.gameState !== 'playing') continue;
         const dt = TICK / 1000;
 
+        // --- Time-based match end ---
+        if (room.gameStartTime && room.gameDuration) {
+            const elapsed = (Date.now() - room.gameStartTime) / 1000;
+            if (elapsed >= room.gameDuration) {
+                // Time's up - highest kills wins
+                let winnerId = null;
+                let maxKills = -1;
+                for (const [id, kills] of room.scores) {
+                    if (kills > maxKills) { maxKills = kills; winnerId = id; }
+                }
+                endMatch(roomName, room, winnerId);
+                continue;
+            }
+        }
+
         // --- Server-authoritative player-vs-player body separation ---
-        // Push overlapping players apart so online clients can't pass through
-        // each other. Runs before the relay so corrected positions are broadcast.
         {
             const MIN_DIST = 2 * PLAYER_RADIUS;
             const players = [...room.state.entries()].filter(([, s]) => !!s);
@@ -320,8 +482,6 @@ setInterval(() => {
         }
 
         // --- Relay every player's authoritative state to the others ---
-        // For each player, build the list of OTHER players and send it to that
-        // player so they can render their peers.
         for (const [id, st] of room.state) {
             if (!st) continue;
             const others = [];
@@ -331,6 +491,7 @@ setInterval(() => {
                 others.push({
                     id: oid,
                     playerIndex: room.playerIndex.get(oid) ?? 0,
+                    name: room.names.get(oid) || `P${(room.playerIndex.get(oid) || 0) + 1}`,
                     x: ost.x,
                     y: ost.y,
                     angle: ost.angle,
@@ -350,23 +511,18 @@ setInterval(() => {
             b.life -= dt;
             if (b.life <= 0) continue;
 
-            const px = b.x, py = b.y;            // previous position
+            const px = b.x, py = b.y;
             b.x += b.vx * dt;
             b.y += b.vy * dt;
-            const nx = b.x, ny = b.y;            // new position
+            const nx = b.x, ny = b.y;
 
-            // Candidates: players and solid walls, ranked by entry fraction along
-            // the movement segment so the FIRST thing hit wins.
-            let best = null; // { t, kind, pid }
+            let best = null;
 
-            // Out of map bounds = an implicit wall.
             if (nx < 0 || nx > WORLD_W || ny < 0 || ny > WORLD_H) {
-                // Find where the segment exits the bounds for a nicer boom position.
                 const bnd = segAABB(px, py, nx, ny, 0, 0, WORLD_W, WORLD_H);
                 best = { t: bnd ? bnd.t : 0, kind: 'wall', pid: null, at: bnd ? [bnd.ix, bnd.iy] : [nx, ny] };
             }
 
-            // Solid walls collision.
             for (const r of COLLIDERS) {
                 const res = segRectHit(px, py, nx, ny, r.x, r.y, r.w, r.h);
                 if (res && res.t >= 0 && res.t <= 1) {
@@ -376,7 +532,6 @@ setInterval(() => {
                 }
             }
 
-            // Player collision (point aimed slightly above player center).
             for (const [pid, st] of room.state) {
                 if (pid === b.owner || !st) continue;
                 const hp = room.hp.get(pid);
@@ -416,7 +571,6 @@ function segCircleHit(x0, y0, x1, y1, cx, cy, r) {
     return null;
 }
 
-// Segment vs AABB: entry fraction t in [0,1] and hit point.
 function segAABB(x0, y0, x1, y1, rx, ry, rw, rh) {
     return segRectHit(x0, y0, x1, y1, rx, ry, rw, rh);
 }
@@ -427,7 +581,6 @@ function hitSomething(room, roomName, b, best) {
     const hy = best.at ? best.at[1] : b.y;
 
     if (wcfg.explosive) {
-        // Splash damage to everyone within radius of the impact point.
         for (const [pid, st] of room.state) {
             if (!st) continue;
             const hp = room.hp.get(pid);
@@ -442,7 +595,6 @@ function hitSomething(room, roomName, b, best) {
     } else if (best.kind === 'player') {
         applyDamage(room, roomName, best.pid, b.owner, wcfg.damage);
     }
-    // Non-explosive wall hits simply stop the bullet (no fx needed client-side).
 }
 
 function applyDamage(room, roomName, victimId, attackerId, dmg) {
@@ -452,8 +604,6 @@ function applyDamage(room, roomName, victimId, attackerId, dmg) {
     if (hp.hp <= 0) {
         hp.hp = 0;
         hp.alive = false;
-        // Non-fatal hit stops the bullet.
-        // Award kill to the attacker (unless self/suicide).
         if (attackerId && attackerId !== victimId) {
             const k = (room.scores.get(attackerId) || 0) + 1;
             room.scores.set(attackerId, k);
@@ -461,7 +611,6 @@ function applyDamage(room, roomName, victimId, attackerId, dmg) {
         const killerId = attackerId === victimId ? null : attackerId;
         emitRoom(roomName, 'player-event', { id: killerId, evt: { type: 'elim', victimId, killerId } });
         broadcastScores(roomName);
-        // Let the victim's client respawn it; server waits for player-respawn.
     } else {
         emitRoom(roomName, 'fx', { type: 'hit', x: 0, y: 0 });
     }

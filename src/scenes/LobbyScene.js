@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GAME_CONFIG } from '../utils/constants.js';
 import { NetClient } from '../net/NetClient.js';
 
-// LobbyScene - choose a room to join (or create one), then start a match online.
+// LobbyScene - choose a room to join (or create one), then go to waiting room.
 export class LobbyScene extends Phaser.Scene {
     constructor() {
         super({ key: 'LobbyScene' });
@@ -69,7 +69,7 @@ export class LobbyScene extends Phaser.Scene {
             if (!rooms.length) {
                 this.roomListText.setText('(no rooms yet - create one or quick join)');
             } else {
-                const lines = rooms.map((r, i) => `${i + 1}. ${r.name}  (${r.players} player${r.players === 1 ? '' : 's'})`);
+                const lines = rooms.map((r, i) => `${i + 1}. ${r.name}  (${r.players} player${r.players === 1 ? '' : 's'})${r.gameState !== 'waiting' ? ' [' + r.gameState + ']' : ''}`);
                 this.roomListText.setText(lines.join('\n'));
             }
             this.statusText.setText('Select a room to join.');
@@ -87,7 +87,7 @@ export class LobbyScene extends Phaser.Scene {
 
     joinRoom(name) {
         if (!name) return;
-        this.scene.start('GameScene', { mode: 'online', roomName: name });
+        this.scene.start('WaitingRoomScene', { roomName: name });
     }
 
     createBut(x, y, text, cb) {
@@ -99,7 +99,7 @@ export class LobbyScene extends Phaser.Scene {
         }).setOrigin(0.5);
         bg.on('pointerover', () => { bg.setFillStyle(0x5c4033); label.setColor('#ffffff'); });
         bg.on('pointerout', () => { bg.setFillStyle(0x3d2b1f); label.setColor('#e0d0c0'); });
-        bg.on('pointerdown', cb);
+        bg.on('pointerdown', () => { const a = this.registry.get('sound'); if (a) a.click(); cb(); });
         return { bg, label };
     }
 

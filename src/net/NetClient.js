@@ -7,8 +7,6 @@ import { resolveServerAddr } from './serverAddr.js';
 export class NetClient {
     constructor(url, roomName) {
         this.socket = null;
-        // Server address resolution (see resolveServerAddr): explicit url,
-        // VITE_SERVER_URL, local :3001, or same-origin when deployed on Railway.
         this.url = url ? String(url) : resolveServerAddr();
         this.roomName = roomName || 'default';
         this.playerIndex = 0;
@@ -30,10 +28,21 @@ export class NetClient {
         this.socket.on('match-end', (data) => this.emit('match-end', data));
         this.socket.on('hp-update', (data) => this.emit('hp', data));
         this.socket.on('fx', (data) => this.emit('fx', data));
+        this.socket.on('room-players', (data) => this.emit('room-players', data));
+        this.socket.on('countdown', (data) => this.emit('countdown', data));
+        this.socket.on('game-start', (data) => this.emit('game-start', data));
     }
 
     on(name, fn) {
         (this.listeners[name] = this.listeners[name] || []).push(fn);
+        // Return an unsubscribe function for convenience (used to clean up
+        // listeners when a scene shuts down but the socket is reused elsewhere).
+        return () => {
+            const arr = this.listeners[name];
+            if (!arr) return;
+            const i = arr.indexOf(fn);
+            if (i >= 0) arr.splice(i, 1);
+        };
     }
 
     emit(name, payload) {
@@ -55,6 +64,18 @@ export class NetClient {
         if (this.connected) this.socket.emit('leave-room');
     }
 
+    sendName(name) {
+        if (this.connected) this.socket.emit('set-name', name);
+    }
+
+    sendTimeLimit(seconds) {
+        if (this.connected) this.socket.emit('set-time-limit', seconds);
+    }
+
+    sendStartGame() {
+        if (this.connected) this.socket.emit('start-game');
+    }
+
     sendState(state) {
         if (this.connected) this.socket.emit('player-state', state);
     }
@@ -63,13 +84,10 @@ export class NetClient {
         if (this.connected) this.socket.emit('player-event', evt);
     }
 
-    // Fire a shot server-side. The server simulates the bullet and decides hits.
     sendFire(x, y, angle, weapon) {
         if (this.connected) this.socket.emit('player-fire', { x, y, angle, weapon });
     }
 
-    // Tell the server the local player respawned back to full health, with the
-    // new position so the server can reset its movement baseline.
     sendRespawn(x, y) {
         if (this.connected) this.socket.emit('player-respawn', { x, y });
     }

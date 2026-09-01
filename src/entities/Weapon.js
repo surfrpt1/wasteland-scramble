@@ -42,6 +42,12 @@ export class WeaponSystem {
         return this.isReloading;
     }
 
+    // Convenience accessor for the shared procedural sound manager.
+    get audio() {
+        if (!this._audio) this._audio = this.scene.registry.get('sound');
+        return this._audio;
+    }
+
     get reloadProgress() {
         if (!this.isReloading) return 1;
         const elapsed = this.scene.time.now - this.reloadStart;
@@ -56,6 +62,7 @@ export class WeaponSystem {
 
         this.isReloading = true;
         this.reloadStart = time;
+        if (this.audio) this.audio.reload();
 
         const dur = cfg.reloadTime || 1500;
         this.scene.time.delayedCall(dur, () => {
@@ -80,6 +87,9 @@ export class WeaponSystem {
 
         const spread = (Math.random() - 0.5) * cfg.spread * 2;
         const finalAngle = angle + spread;
+
+        // Gunshot sound (procedural, tailored per weapon)
+        if (this.audio) this.audio.shot(this.currentWeapon);
 
         const bullet = this.projectiles.get(x, y, 'bullet');
         if (bullet) {
@@ -150,7 +160,11 @@ export class WeaponSystem {
         return bullet;
     }
 
-    createExplosion(x, y, radius, damage) {        const explosion = this.scene.add.image(x, y, 'explosion');
+    createExplosion(x, y, radius, damage) {
+        // Explosion sound
+        if (this.audio) this.audio.explosion();
+
+        const explosion = this.scene.add.image(x, y, 'explosion');
         explosion.setScale(radius / 16);
         explosion.setAlpha(0.8);
         explosion.setDepth(15);

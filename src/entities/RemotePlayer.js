@@ -4,10 +4,11 @@
 import { PLAYER_CONFIG } from '../utils/constants.js';
 
 export class RemotePlayer {
-    constructor(scene, id, playerIndex) {
+    constructor(scene, id, playerIndex, displayName) {
         this.scene = scene;
         this.id = id;
         this.playerIndex = playerIndex;
+        this.displayName = displayName || `P${playerIndex + 1}`;
         this.isRemote = true;
         this.isAlive = true;
         this.health = PLAYER_CONFIG.MAX_HEALTH;
@@ -25,7 +26,7 @@ export class RemotePlayer {
         this.hpBar = scene.add.graphics().setDepth(20);
 
         // Name tag
-        this.nametag = scene.add.text(0, 0, `P${playerIndex + 1}`, {
+        this.nametag = scene.add.text(0, 0, this.displayName, {
             fontSize: '11px', fontFamily: 'monospace', color: '#ffffff',
             backgroundColor: '#00000088',
         }).setOrigin(0.5, 0).setDepth(21);
@@ -50,6 +51,10 @@ export class RemotePlayer {
         this.health = state.health;
         this.alive = !!state.alive;
         this.radExposure = state.rad || 0;
+        if (state.name && state.name !== this.displayName) {
+            this.displayName = state.name;
+            this.nametag.setText(state.name);
+        }
         if (state.weapon && state.weapon !== this.currentWeapon) {
             this.setWeapon(state.weapon);
         }

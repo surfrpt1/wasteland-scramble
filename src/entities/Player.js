@@ -4,8 +4,7 @@ import { PLAYER_CONFIG, GRAPPLE_CONFIG, COLORS } from '../utils/constants.js';
 export class Player {
     constructor(scene, x, y, playerId = 0) {
         this.scene = scene;
-        this.playerId = playerId;
-        this.health = PLAYER_CONFIG.MAX_HEALTH;
+        this.playerId = playerId;        this.health = PLAYER_CONFIG.MAX_HEALTH;
         this.radExposure = 0;
         this.isAlive = true;
         this.canGrapple = true;
@@ -42,6 +41,12 @@ export class Player {
 
         // Dead overlay
         this.deadTint = 0x555555;
+    }
+
+    // Convenience accessor for the shared procedural sound manager.
+    get audio() {
+        if (!this._audio) this._audio = this.scene.registry.get('sound');
+        return this._audio;
     }
 
     update(cursors, pointer, time, ctl) {
@@ -124,6 +129,7 @@ export class Player {
                     this.isWallClinging = false;
                 }
                 body.setVelocityY(jf);
+                if (this.audio) this.audio.jump();
             }
         }
     }
@@ -145,6 +151,7 @@ export class Player {
                 this.grappleActive = true;
                 this.canGrapple = false;
                 this.grapplePoint = { x: targetX, y: targetY };
+                if (this.audio) this.audio.grapple();
                 this.grappleTimeout = this.scene.time.delayedCall(1200, () => {
                     this.releaseGrapple();
                 });
@@ -174,6 +181,7 @@ export class Player {
         this.grappleActive = true;
         this.canGrapple = false;
         this.grapplePoint = { x: targetX, y: targetY };
+        if (this.audio) this.audio.grapple();
         this.grappleTimeout = this.scene.time.delayedCall(1200, () => {
             this.releaseGrapple();
         });
@@ -192,6 +200,7 @@ export class Player {
             this.isWallClinging = true;
             body.setVelocityY(PLAYER_CONFIG.WALL_CLING_FALL_SPEED);
             body.setAllowGravity(false);
+            if (this.audio) this.audio.wallCling();
             this.wallClingTimer = this.scene.time.delayedCall(
                 PLAYER_CONFIG.WALL_CLING_DURATION,
                 () => { if (this.isWallClinging) { this.isWallClinging = false; body.setAllowGravity(true); } }
@@ -279,6 +288,7 @@ export class Player {
         if (!this.isAlive) return;
         this.health -= amount;
         this.sprite.setTint(0xff5555);
+        if (this.audio) this.audio.hurt();
         this.scene.time.delayedCall(100, () => {
             if (this.sprite.active) this.sprite.clearTint();
         });
@@ -293,6 +303,7 @@ export class Player {
         this.weaponSprite.setVisible(false);
         this.grappleLine.clear();
         this.hpBar.clear();
+        if (this.audio) this.audio.death();
         this.scene.events.emit('playerDied', this, cause);
         this.scene.time.delayedCall(3000, () => this.respawn());
     }

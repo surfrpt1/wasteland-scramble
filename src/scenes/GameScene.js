@@ -41,19 +41,16 @@ export class GameScene extends Phaser.Scene {
         this.createPlayers();
 
         // --- COLLIDERS ---
-        // Player vs platforms & obstacles (prevent passing through walls/cover)
         for (const player of this.players) {
             this.physics.add.collider(player.sprite, this.platforms);
             this.physics.add.collider(player.sprite, this.solidObstacles);
         }
-        // Player vs player (prevent stacking/overlap)
         for (let i = 0; i < this.players.length; i++) {
             for (let j = i + 1; j < this.players.length; j++) {
                 this.physics.add.collider(this.players[i].sprite, this.players[j].sprite);
             }
         }
 
-        // Bullets vs platforms & obstacles
         for (const ws of this.weapons) {
             this.physics.add.collider(ws.projectiles, this.platforms, (bullet) => {
                 if (bullet.explosive) {
@@ -69,7 +66,6 @@ export class GameScene extends Phaser.Scene {
             });
         }
 
-        // Online: remote bullets colliding with walls, and hitting the local player.
         if (this.gameMode === 'online') {
             const ws0 = this.weapons[0];
             this.physics.add.collider(ws0.remoteProjectiles, this.platforms, (bullet) => {
@@ -84,20 +80,16 @@ export class GameScene extends Phaser.Scene {
                 }
                 ws0.deactivateBullet(bullet);
             });
-            // Remote bullets that reach the local player. HP/damage is decided by
-            // the SERVER (authoritative); here we only stop the visual projectile.
             this.physics.add.overlap(ws0.remoteProjectiles, this.players[0].sprite, (bullet) => {
                 if (!bullet.active) return;
                 ws0.deactivateBullet(bullet);
             });
         }
 
-        // Human player pickups
         this.physics.add.overlap(this.players[0].sprite, this.pickups, (sprite, pickup) => {
             this.collectPickup(this.players[0], pickup);
         });
 
-        // Rad zone overlap
         for (const player of this.players) {
             for (const zone of this.radZones) {
                 this.physics.add.overlap(player.sprite, zone.rect, () => {
@@ -128,24 +120,45 @@ export class GameScene extends Phaser.Scene {
         // UI
         this.createUI();
 
-        // Touch / on-screen controls (works on both touch & desktop)
+        // Touch / on-screen controls
         this.touchControls = new TouchControls(this);
         window.__ws = this.touchControls;
-
-        // "BACK TO MENU" inside the settings panel leaves the current match.
-        // In online mode the scene SHUTDOWN handler disconnects from the server.
         this.touchControls.onExit = () => this.scene.start('MenuScene');
 
+        // M key toggles all sound
+        const muteKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+        muteKey.on('down', () => {
+            const audio = this.registry.get('sound');
+            if (audio) {
+                audio.enabled = !audio.enabled;
+                audio.setMaster(audio.enabled);
+                const msg = audio.enabled ? 'SOUND ON' : 'SOUND OFF';
+                if (this.killFeed) this.showKillFeedText(msg);
+            }
+        });
+
         this.events.on('playerDied', (player, cause) => {
-            // In online mode the server-driven elim event already shows the feed.
             if (this.gameMode !== 'online') {
                 this.showKillFeed(player, cause);
+                // Track kills locally for practice/ffa modes. Ask the weapon system
+                // who fired the killing bullet; bots only kill the human, so if a bot
+                // died by combat it was the human's kill.
+                if (player.isBot && cause === 'combat') {
+                    this.scores[0] = (this.scores[0] || 0) + 1;
+                    this.updateLocalKillText();
+                }
             }
         });
 
         this.scores = {};
         for (const p of this.players) this.scores[p.playerId] = 0;
         this.gameTime = 0;
+
+        // Online mode time tracking
+        this.matchEndTime = null;
+        this.matchStartTime = null;
+        this.gameDuration = 0;
+        this.gameStartTime = null;
 
         // Camera follow player 0
         this.cameras.main.startFollow(this.players[0].sprite, true, 0.08, 0.08);
@@ -157,7 +170,6 @@ export class GameScene extends Phaser.Scene {
         this.players.push(new Player(this, spawns[0].x, spawns[0].y, 0));
         this.weapons.push(new WeaponSystem(this));
 
-        // Online mode: no bots; real players connect from other devices.
         const bots = this.gameMode === 'practice' ? 3 : 0;
         for (let i = 0; i < bots; i++) {
             const sp = spawns[(i + 1) % spawns.length];
@@ -166,20 +178,29 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (this.gameMode === 'online') {
-            this.remotes = new Map(); // peer socket id -> RemotePlayer
+            this.remotes = new Map();
             this.setupNet();
         }
     }
 
     setupNet() {
-        // NetClient connects to the server; we join the room named in init data.
         const roomName = (this.initRoomName) || this.registry.get('roomName') || 'default';
-        this.net = new NetClient(this.registry.get('serverAddr'), roomName);
-        this.net.connect();
+
+        // Reuse existing NetClient from WaitingRoomScene if available
+        const existingNet = this.registry.get('netClient');
+        if (existingNet && existingNet.connected) {
+            this.net = existingNet;
+            this.registry.set('netClient', null); // consume it
+        } else {
+            this.net = new NetClient(this.registry.get('serverAddr'), roomName);
+            this.net.connect();
+        }
+
         this.netConnected = false;
         this.lastHitByRemote = null;
         this.matchOver = false;
         this.onlineScores = [];
+        this.playerNames = {}; // socketId -> name
 
         // Status banner
         this.netStatus = this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT - 56,
@@ -201,7 +222,16 @@ export class GameScene extends Phaser.Scene {
         this.net.on('joined', (data) => {
             this.netConnected = true;
             this.net.playerIndex = data.playerIndex;
-            this.netStatus.setText(`ROOM "${roomName}" - YOU ARE P${data.playerIndex + 1}`);
+            if (data.gameDuration) this.gameDuration = data.gameDuration;
+            // If the game already started (match already in "playing" state when we joined),
+            // mark start time as now so the timer works.
+            if (data.gameState === 'playing' && !this.gameStartTime) this.gameStartTime = Date.now();
+            if (data.name) this.playerNames[this.net.socket.id] = data.name;
+            this.netStatus.setText(`ROOM "${roomName}" - YOU ARE ${data.name || 'P' + (data.playerIndex + 1)}`);
+            // Send our saved player name to the server
+            const myName = this.registry.get('playerName') || 'Player';
+            this.playerNames[this.net.socket.id] = myName;
+            this.net.sendName(myName);
             this.net.sendState(this.buildLocalState());
             if (data.scores) this.updateScoreboard(data.scores);
         });
@@ -210,9 +240,10 @@ export class GameScene extends Phaser.Scene {
             const seen = new Set();
             for (const peer of peers) {
                 seen.add(peer.id);
+                if (peer.name) this.playerNames[peer.id] = peer.name;
                 let rp = this.remotes.get(peer.id);
                 if (!rp) {
-                    rp = new RemotePlayer(this, peer.id, peer.playerIndex);
+                    rp = new RemotePlayer(this, peer.id, peer.playerIndex, peer.name);
                     this.remotes.set(peer.id, rp);
                     this.attachRemoteBody(rp);
                 }
@@ -234,11 +265,9 @@ export class GameScene extends Phaser.Scene {
                 rp.destroy();
                 this.remotes.delete(id);
             }
+            delete this.playerNames[id];
         });
 
-        // Give each remote a physics body so the LOCAL player collides with
-        // (and is pushed back by) other players instead of passing through them.
-        // The remote body is immovable; the server relays authoritative positions.
         this.attachRemoteBody = (rp) => {
             if (!rp.sprite || rp.sprite.body) return;
             this.physics.add.existing(rp.sprite);
@@ -257,29 +286,26 @@ export class GameScene extends Phaser.Scene {
         };
 
         this.net.on('peer-event', ({ id, evt }) => {
-            if (!this.remotes.has(id)) return;
             if (evt.type === 'weapon') {
                 const rp = this.remotes.get(id);
                 if (rp) rp.setWeapon(evt.weapon);
             } else if (evt.type === 'elim') {
-                // { victimId, killerId } - show an elimination in the kill feed.
                 const snap = (peerId) => {
                     if (peerId === null) return 'environment';
                     if (this.net && this.net.socket && this.net.socket.id === peerId) return 'You';
+                    if (this.playerNames[peerId]) return this.playerNames[peerId];
                     const rp = this.remotes.get(peerId);
-                    return rp ? `P${rp.playerIndex + 1}` : '?';
+                    return rp ? rp.displayName : '?';
                 };
                 const killer = snap(evt.killerId);
                 const victim = snap(evt.victimId);
                 this.showKillFeedText(`${killer} > ${victim}`);
-                // If the victim is us, trigger our own death visuals.
                 if (this.net && this.net.socket && this.net.socket.id === evt.victimId) {
                     this.handleLocalDeath();
                 }
             }
         });
 
-        // Server-authoritative HP (both our own and remote players').
         this.net.on('hp', ({ players }) => {
             for (const p of players) {
                 if (this.net && this.net.socket && p.id === this.net.socket.id) {
@@ -291,7 +317,6 @@ export class GameScene extends Phaser.Scene {
             }
         });
 
-        // Server FX: server-driven bullet/boom visuals (cosmetic only).
         this.net.on('fx', ({ type, x, y, angle, weapon, radius, ...rest }) => {
             if (type === 'shot' && typeof angle === 'number') {
                 this.weapons[0].fireRemote(x, y, angle, weapon);
@@ -300,7 +325,6 @@ export class GameScene extends Phaser.Scene {
             }
         });
 
-        // When the local player respawns (its own 3s timer), tell the server.
         this.events.on('playerRespawned', () => {
             const p = this.players[0];
             if (this.net && this.net.connected) {
@@ -310,65 +334,153 @@ export class GameScene extends Phaser.Scene {
 
         this.net.on('scores', ({ scores }) => this.updateScoreboard(scores));
 
-        this.net.on('match-end', ({ winnerId }) => {
+        this.net.on('room-players', (data) => {
+            if (data.players) {
+                for (const p of data.players) {
+                    if (p.name) this.playerNames[p.id] = p.name;
+                }
+            }
+        });
+
+        this.net.on('match-end', ({ winnerId, rankings, scores }) => {
             this.matchOver = true;
-            this.showWinScreen(winnerId);
+            this.showRankingsScreen(winnerId, rankings || scores);
+        });
+
+        this.net.on('game-start', ({ gameDuration, killLimit, startTime }) => {
+            // Time-based match tracking
+            this.gameDuration = gameDuration || 0;
+            this.gameStartTime = startTime || Date.now();
         });
 
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             if (this.net) this.net.disconnect();
         });
 
-        this.net.join(roomName);
+        if (!this.net.connected) {
+            this.net.join(roomName);
+        } else {
+            // Already connected (from WaitingRoomScene), just send state
+            this.netConnected = true;
+            this.net.playerIndex = this.net.playerIndex || 0;
+            // Capture game timing stored by the waiting room
+            if (this.net.gameDuration) this.gameDuration = this.net.gameDuration;
+            if (this.net.gameStartTime) this.gameStartTime = this.net.gameStartTime;
+            if (this.net.joinData) {
+                const d = this.net.joinData;
+                if (d.name) this.playerNames[this.net.socket.id] = d.name;
+                if (!this.gameDuration && d.gameDuration) this.gameDuration = d.gameDuration;
+                this.netStatus.setText(`ROOM "${roomName}" - YOU ARE ${d.name || 'P' + (this.net.playerIndex + 1)}`);
+            }
+            if (this.net.playerIndex !== undefined) {
+                this.netStatus.setText(`ROOM "${roomName}" - YOU ARE ${this.playerNames[this.net.socket.id] || 'P' + (this.net.playerIndex + 1)}`);
+            }
+            this.net.sendState(this.buildLocalState());
+        }
+    }
+
+    getPlayerName(socketId) {
+        if (this.net && this.net.socket && socketId === this.net.socket.id) return 'You';
+        if (this.playerNames[socketId]) return this.playerNames[socketId];
+        // Fallback for remotes
+        const rp = this.remotes && this.remotes.get(socketId);
+        if (rp) return rp.displayName;
+        return '?';
     }
 
     updateScoreboard(scores) {
-        if (!this.netScoreboard) return;
         this.onlineScores = scores || [];
-        if (!this.onlineScores.length) { this.netScoreboard.setText(''); return; }
-        const lines = [];
-        // Sort: me first, then by kills desc.
-        const me = this.net ? this.net.playerIndex : 0;
-        const sorted = this.onlineScores.slice().sort((a, b) => {
-            if (a.playerIndex === me) return -1;
-            if (b.playerIndex === me) return 1;
-            return b.kills - a.kills;
-        });
-        for (const s of sorted) {
-            const tag = s.playerIndex === me ? 'YOU' : `P${s.playerIndex + 1}`;
-            lines.push(`${tag}: ${s.kills}`);
+        // Update the detailed scoreboard (top-right)
+        if (this.netScoreboard) {
+            if (!this.onlineScores.length) { this.netScoreboard.setText(''); }
+            else {
+                const lines = [];
+                const me = this.net ? this.net.playerIndex : 0;
+                const sorted = this.onlineScores.slice().sort((a, b) => {
+                    if (a.playerIndex === me) return -1;
+                    if (b.playerIndex === me) return 1;
+                    return b.kills - a.kills;
+                });
+                for (const s of sorted) {
+                    const tag = s.playerIndex === me ? 'YOU' : (s.name || `P${s.playerIndex + 1}`);
+                    lines.push(`${tag}: ${s.kills}`);
+                }
+                this.netScoreboard.setText('SCORE\n' + lines.join('\n'));
+            }
         }
-        this.netScoreboard.setText('SCORE\n' + lines.join('\n'));
+        // Update the top-center score text with local player's kills
+        if (this.scoreText && this.net) {
+            const myId = this.net.socket ? this.net.socket.id : null;
+            const myScore = this.onlineScores.find(s => s.id === myId);
+            const myKills = myScore ? myScore.kills : 0;
+            this.scoreText.setText(`KILLS: ${myKills}`);
+        }
     }
 
-    showWinScreen(winnerId) {
-        const me = this.net ? this.net.playerIndex : 0;
-        const iWon = winnerId === me;
+    showRankingsScreen(winnerId, rankings) {
         const overlay = this.add.rectangle(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2,
-            GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT, 0x000000, 0.78).setDepth(200);
-        const text = this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2 - 40,
-            iWon ? 'YOU WIN!' : 'YOU LOSE', {
-                fontSize: '56px', fontFamily: 'monospace', color: iWon ? '#44ff44' : '#ff4444',
+            GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT, 0x000000, 0.82).setDepth(200);
+
+        const iWon = winnerId && this.net && this.net.socket && winnerId === this.net.socket.id;
+        const audio = this.registry.get('sound');
+        if (audio) {
+            if (iWon) audio.win(); else audio.lose();
+        }
+
+        const titleText = this.add.text(GAME_CONFIG.WIDTH / 2, 100,
+            iWon ? 'YOU WIN!' : 'MATCH OVER', {
+                fontSize: '48px', fontFamily: 'monospace', color: iWon ? '#44ff44' : '#ff4444',
                 fontStyle: 'bold', backgroundColor: '#00000088',
             }).setOrigin(0.5).setDepth(201);
-        this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2 + 20,
+
+        // Rankings list
+        let y = 170;
+        if (rankings && rankings.length) {
+            const rankColors = ['#ffd700', '#c0c0c0', '#cd7f32', '#e0d0c0', '#e0d0c0', '#e0d0c0'];
+            for (const r of rankings) {
+                const color = rankColors[(r.rank - 1)] || '#e0d0c0';
+                const rankPrefix = r.rank === 1 ? '[WINNER] ' : '';
+                const nameStr = r.name || `P${(r.playerIndex || 0) + 1}`;
+                const isMe = this.net && this.net.socket && r.id === this.net.socket.id;
+                const meTag = isMe ? ' (YOU)' : '';
+                const line = this.add.text(GAME_CONFIG.WIDTH / 2, y,
+                    `#${r.rank}  ${rankPrefix}${nameStr}${meTag}  -  ${r.kills} kills`, {
+                        fontSize: r.rank === 1 ? '24px' : '18px',
+                        fontFamily: 'monospace',
+                        color: r.rank === 1 ? '#ffd700' : color,
+                        fontStyle: r.rank === 1 ? 'bold' : 'normal',
+                    }).setOrigin(0.5).setDepth(201);
+                y += 36;
+            }
+        }
+
+        // Tap to return
+        this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT - 60,
             'TAP TO RETURN TO MENU', {
                 fontSize: '20px', fontFamily: 'monospace', color: '#cccccc',
             }).setOrigin(0.5).setDepth(201);
+
         overlay.setInteractive({ useHandCursor: true });
-        overlay.once('pointerdown', () => {
-            this.scene.start('MenuScene');
-        });
-        text.setInteractive({ useHandCursor: true });
-        text.once('pointerdown', () => {
-            this.scene.start('MenuScene');
-        });
-        // Also allow ESC.
+        overlay.once('pointerdown', () => this.scene.start('MenuScene'));
+        titleText.setInteractive({ useHandCursor: true });
+        titleText.once('pointerdown', () => this.scene.start('MenuScene'));
+
         this.time.delayedCall(400, () => {
             if (this.cursors && this.cursors.esc) {
                 this.cursors.esc.once('down', () => this.scene.start('MenuScene'));
             }
         });
+    }
+
+    showWinScreen(winnerId) {
+        this.showRankingsScreen(winnerId, this.onlineScores.map((s, i) => ({
+            rank: i + 1,
+            id: s.id,
+            name: s.name || `P${s.playerIndex + 1}`,
+            playerIndex: s.playerIndex,
+            kills: s.kills,
+            isWinner: s.id === winnerId,
+        })));
     }
 
     buildLocalState() {
@@ -385,9 +497,6 @@ export class GameScene extends Phaser.Scene {
         };
     }
 
-    // Server-authoritative HP for the LOCAL player. When the server says you're
-    // dead, trigger death visuals; respawn is handled by Player.die's timer +
-    // a player-respawn notice to the server.
     applyLocalHP(hp, alive) {
         const p = this.players[0];
         p.health = hp;
@@ -399,8 +508,6 @@ export class GameScene extends Phaser.Scene {
     handleLocalDeath() {
         const p = this.players[0];
         if (!p.isAlive) return;
-        // Player.die triggers death visuals and schedules a local respawn after
-        // 3s; the playerRespawned listener tells the server the new position.
         p.die('combat');
     }
 
@@ -409,7 +516,6 @@ export class GameScene extends Phaser.Scene {
         const h = this.mapData.height * 32;
         const GROUND_TOP = 28 * 32;
 
-        // --- Sky gradient (screen-fixed, no parallax) ---
         const sky = this.add.graphics().setScrollFactor(0).setDepth(-1);
         const skyColors = [0x3a1a12, 0x5a2412, 0x7a3214, 0x94401a, 0xb04a18];
         const bandH = GAME_CONFIG.HEIGHT / skyColors.length;
@@ -417,24 +523,20 @@ export class GameScene extends Phaser.Scene {
             sky.fillStyle(skyColors[i], 1);
             sky.fillRect(0, i * bandH, GAME_CONFIG.WIDTH, bandH + 1);
         }
-        // Fade to the ground haze at the bottom
         sky.fillStyle(0x241208, 0.55);
         sky.fillRect(0, GROUND_TOP - 60, GAME_CONFIG.WIDTH, 200);
 
-        // --- Sun + glow (screen-fixed) ---
         const sunX = GAME_CONFIG.WIDTH - 220;
         const sunY = 120;
         const sun = this.add.image(sunX, sunY, this.genSunTexture()).setScrollFactor(0).setDepth(-1);
         sun.setScale(1);
 
-        // --- Parallax layers (screen-anchored to the ground line, synced each frame) ---
-        this.groundWorldY = GROUND_TOP; // world Y of the main ground surface
+        this.groundWorldY = GROUND_TOP;
         this.farLayer = this.add.tileSprite(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT, GAME_CONFIG.WIDTH, 460, this.genSkylineTexture('far'))
             .setOrigin(0.5, 1).setScrollFactor(0).setDepth(0).setAlpha(0.9);
         this.nearLayer = this.add.tileSprite(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT, GAME_CONFIG.WIDTH, 290, this.genSkylineTexture('near'))
             .setOrigin(0.5, 1).setScrollFactor(0).setDepth(0).setAlpha(0.85);
 
-        // --- Drifting dust / clouds ---
         this.clouds = [];
         for (let i = 0; i < 6; i++) {
             const c = this.add.image(
@@ -446,13 +548,11 @@ export class GameScene extends Phaser.Scene {
             this.clouds.push({ img: c, speed: 6 + Math.random() * 12 });
         }
 
-        // --- Distant ruined skyline (world-backed, drawn once) via a tiled tint ---
         const bg = this.add.graphics();
         bg.setDepth(0);
         bg.fillStyle(0x180800, 1);
         bg.fillRect(0, GROUND_TOP, w, h - GROUND_TOP);
 
-        // Ground atmosphere / old road patches
         for (let i = 0; i < 40; i++) {
             const rx = Math.random() * w;
             bg.fillStyle([0x2a1608, 0x1f0f06, 0x33200e][Math.floor(Math.random() * 3)], 0.5);
@@ -465,7 +565,6 @@ export class GameScene extends Phaser.Scene {
         if (this.textures.exists(key)) return key;
         const s = 256;
         const g = this.add.graphics();
-        // concentric halo (faint outer rings)
         g.fillStyle(0xffcc66, 0.10); g.fillCircle(s / 2, s / 2, 120);
         g.fillStyle(0xffcc66, 0.16); g.fillCircle(s / 2, s / 2, 92);
         g.fillStyle(0xffdd88, 1);    g.fillCircle(s / 2, s / 2, 52);
@@ -522,9 +621,6 @@ export class GameScene extends Phaser.Scene {
 
     updateParallax() {
         const cam = this.cameras.main;
-        // The ground's on-screen Y = groundWorldY - camera.scrollY. Anchor the
-        // skyline layers to that line so they always sit right above the ground
-        // (handles vertical camera scroll) while tilePositionX gives horizontal parallax.
         const groundScreenY = this.groundWorldY - cam.scrollY;
         if (this.farLayer) {
             this.farLayer.y = groundScreenY;
@@ -546,7 +642,6 @@ export class GameScene extends Phaser.Scene {
         const ui = this.add.container(0, 0).setScrollFactor(0).setDepth(200);
         this.ui = ui;
 
-        // Top bar panel
         this.topBar = this.add.rectangle(GAME_CONFIG.WIDTH / 2, 0, GAME_CONFIG.WIDTH, 44, 0x000000, 0.55)
             .setOrigin(0.5, 0);
         ui.add(this.topBar);
@@ -559,7 +654,7 @@ export class GameScene extends Phaser.Scene {
         });
         ui.add([this.healthBarBg, this.healthBarFill, this.healthText]);
 
-        // Rad bar (top center-left)
+        // Rad bar
         this.radBarBg = this.add.rectangle(380, 22, 120, 10, 0x222222, 1).setOrigin(0, 0.5);
         this.radBarFill = this.add.rectangle(381, 22, 118, 8, 0x44ff44, 1).setOrigin(0, 0.5);
         this.radText = this.add.text(506, 14, 'RAD 0', {
@@ -567,14 +662,21 @@ export class GameScene extends Phaser.Scene {
         });
         ui.add([this.radBarBg, this.radBarFill, this.radText]);
 
-        // Score / kills (top-center, clear of the settings gear top-right)
+        // Score / kills (top-center) - NOW ACTUALLY UPDATED
         this.scoreText = this.add.text(GAME_CONFIG.WIDTH / 2, 14, 'KILLS: 0', {
             fontSize: '18px', fontFamily: 'monospace', color: '#e0d0c0', fontStyle: 'bold',
             backgroundColor: '#00000088'
         }).setOrigin(0.5, 0);
         ui.add(this.scoreText);
 
-        // --- WEAPON SLOTS (bottom-center, Mini-Militia style) ---
+        // Timer display (top-right area, below score)
+        this.timerText = this.add.text(GAME_CONFIG.WIDTH - 14, 14, '', {
+            fontSize: '14px', fontFamily: 'monospace', color: '#ffcc44',
+            backgroundColor: '#00000088',
+        }).setOrigin(1, 0);
+        ui.add(this.timerText);
+
+        // --- WEAPON SLOTS ---
         this.weaponSlots = [];
         const slotW = 64;
         const slotH = 56;
@@ -600,7 +702,6 @@ export class GameScene extends Phaser.Scene {
             ui.add(slot);
             this.weaponSlots.push(slot);
 
-            // Click to select
             const rect = this.add.rectangle(startX + idx * (slotW + slotGap) + slotW / 2, slotY + slotH / 2, slotW, slotH, 0xffffff, 0)
                 .setInteractive({ useHandCursor: true });
             rect.on('pointerdown', () => this.selectWeapon(key));
@@ -609,9 +710,6 @@ export class GameScene extends Phaser.Scene {
             idx++;
         }
 
-        // Robust tap-to-switch for the weapon slots. Uses a global pointerdown hit
-        // test (the same mechanism as the touch buttons) rather than relying on the
-        // per-rect interactive hit zones, which can be blocked on touch devices.
         this.input.on('pointerdown', (pointer) => {
             if (!this.weaponSlots || !this.weaponSlots.length) return;
             if (this.touchControls && this.touchControls.settingsMode) return;
@@ -625,25 +723,25 @@ export class GameScene extends Phaser.Scene {
             }
         });
 
-        // Ammo big display (right of slots)
+        // Ammo big display
         this.bigAmmo = this.add.text(startX - 30, slotY + slotH / 2, '30', {
             fontSize: '28px', fontFamily: 'monospace', color: '#ffffff', fontStyle: 'bold'
         }).setOrigin(1, 0.5);
         ui.add(this.bigAmmo);
 
-        // --- KILL FEED (top-right, below the settings gear) ---
+        // --- KILL FEED ---
         this.killFeed = this.add.text(GAME_CONFIG.WIDTH - 14, 74, '', {
             fontSize: '13px', fontFamily: 'monospace', color: '#ffcc66', align: 'right', backgroundColor: '#00000088'
         }).setOrigin(1, 0);
         ui.add(this.killFeed);
 
-        // Grapple cooldown indicator (bottom-left)
+        // Grapple cooldown
         this.grappleCd = this.add.text(14, GAME_CONFIG.HEIGHT - 40, 'GRAPPLE READY', {
             fontSize: '12px', fontFamily: 'monospace', color: '#ccaa44'
         });
         ui.add(this.grappleCd);
 
-        // Controls hint (very bottom)
+        // Controls hint
         this.controlsHint = this.add.text(14, GAME_CONFIG.HEIGHT - 18,
             'CLICK: Shoot | R: Reload | R-CLICK: Grapple | WASD: Move | SPACE: Jump | 1-4: Weapons | Q: Wall Cling', {
             fontSize: '11px', fontFamily: 'monospace', color: '#665544'
@@ -663,6 +761,8 @@ export class GameScene extends Phaser.Scene {
 
     collectPickup(player, pickup) {
         if (!player.isAlive) return;
+        const audio = this.registry.get('sound');
+        if (audio) audio.pickup();
         if (pickup.pickupType === 'health') {
             player.health = Math.min(player.health + 30, PLAYER_CONFIG.MAX_HEALTH);
         } else if (pickup.pickupType === 'weapon' && pickup.weapon) {
@@ -688,6 +788,14 @@ export class GameScene extends Phaser.Scene {
         this.time.delayedCall(2500, () => this.killFeed.setText(''));
     }
 
+    // Update the top-center score text for non-online modes (practice/ffa),
+    // where kills are tracked locally.
+    updateLocalKillText() {
+        if (this.scoreText) {
+            this.scoreText.setText(`KILLS: ${this.scores[0] || 0}`);
+        }
+    }
+
     update(time, delta) {
         this.gameTime += delta;
 
@@ -705,13 +813,10 @@ export class GameScene extends Phaser.Scene {
                         player.sprite.body.setVelocityX(player.sprite.body.velocity.x + recoil);
                     }
                 }
-                // Bots auto-reload when empty
                 if (this.weapons[i].mag[this.weapons[i].currentWeapon] === 0 && !this.weapons[i].isReloadingWeapon) {
                     this.weapons[i].reload(time);
                 }
             } else {
-                // Build a clean, immutable per-frame control object (touch + keyboard
-                // merge is handled inside Player.update). Never mutate Phaser Keys.
                 const ctl = {
                     left: this.touchControls.state.left,
                     right: this.touchControls.state.right,
@@ -721,25 +826,17 @@ export class GameScene extends Phaser.Scene {
                 player.update(this.cursors, this.input.activePointer, time, ctl);
                 this.touchControls.updateDebug();
 
-                // Weapon switch (keyboard)
                 if (Phaser.Input.Keyboard.JustDown(this.cursors.weapon1)) this.selectWeapon('SCRAP_RIFLE');
                 if (Phaser.Input.Keyboard.JustDown(this.cursors.weapon2)) this.selectWeapon('NAIL_GUN');
                 if (Phaser.Input.Keyboard.JustDown(this.cursors.weapon3)) this.selectWeapon('PIPE_BOMB');
                 if (Phaser.Input.Keyboard.JustDown(this.cursors.weapon4)) this.selectWeapon('ACID_SPRAYER');
 
-                // Reload (keyboard R or touch)
                 if (Phaser.Input.Keyboard.JustDown(this.cursors.reload) || this.touchControls.state.reloadPressed) {
                     this.weapons[0].reload(time);
                 }
 
-                // On a touch device, do NOT treat an arbitrary touch as a mouse click,
-                // or the whole screen would fire and overlap the other on-screen buttons.
                 const touchDevice = this.sys.game.device.input.touch;
 
-                // Determine aim direction.
-                // - Touch: aim wherever the FIRE stick is pulled (a separate mini-stick
-                //   on the FIRE button). If the stick is centred, fall back to facing.
-                // - Mouse: aim at the cursor.
                 const stick = this.touchControls.state.fireAngle;
                 const mousePointer = this.input.activePointer;
                 let aimX, aimY;
@@ -754,17 +851,14 @@ export class GameScene extends Phaser.Scene {
                     aimY = player.sprite.y;
                 }
 
-                // Shooting: mouse left-click OR touch FIRE button.
                 const mouseShoot = !touchDevice && this.input.activePointer.pointerType === 'mouse' && this.input.activePointer.isDown;
                 const touchShoot = this.touchControls.state.shoot;
                 const wantsShoot = (mouseShoot || touchShoot);
 
-                // Record local aim angle for network broadcast.
                 this.lastAimAngle = Phaser.Math.Angle.Between(
                     player.sprite.x, player.sprite.y - 8, aimX, aimY
                 );
 
-                // Grapple: touch button OR right click
                 const touchGrapple = this.touchControls.state.grapple;
 
                 if (wantsShoot && player.isAlive && !this.weapons[0].isReloadingWeapon) {
@@ -778,7 +872,6 @@ export class GameScene extends Phaser.Scene {
                         player.sprite.body.setVelocityX(player.sprite.body.velocity.x + recoil);
                     }
                     if (recoil && this.gameMode === 'online' && this.net) {
-                        // Tell the SERVER to simulate this shot authoritatively.
                         this.net.sendFire(
                             player.sprite.x, player.sprite.y - 8, angle,
                             this.weapons[0].currentWeapon
@@ -786,14 +879,12 @@ export class GameScene extends Phaser.Scene {
                     }
                 }
 
-                // Touch grapple button
                 if ((touchGrapple || this.touchControls.state.grapplePressed) && player.canGrapple && !player.grappleActive) {
                     player.fireGrapple(player.sprite.x + (player.facingRight ? 1 : -1) * 150, player.sprite.y - 120);
                 }
             }
         }
 
-        // Consume one-frame touch presses after handling
         this.touchControls.consumePressed();
 
         // --- BULLET HITS PLAYERS ---
@@ -827,8 +918,6 @@ export class GameScene extends Phaser.Scene {
                     if (zone.bounds.contains(player.sprite.x, player.sprite.y)) { inZone = true; break; }
                 }
                 if (inZone) {
-                    // In online mode HP is server-authoritative, so only bump the
-                    // visual rad meter here (server doesn't sim rad yet).
                     if (this.gameMode === 'online' && player === this.players[0]) {
                         player.radExposure = Math.min(player.radExposure + 0.5, PLAYER_CONFIG.MAX_RAD);
                     } else {
@@ -856,7 +945,6 @@ export class GameScene extends Phaser.Scene {
             const ws = this.weapons[0];
             const mag = ws.mag[ws.currentWeapon];
             this.bigAmmo.setText(mag !== undefined ? mag + '' : '∞');
-            // Reload indicator / color
             if (ws.isReloadingWeapon) {
                 this.bigAmmo.setColor('#ccaa44');
             } else if (mag === 0) {
@@ -865,7 +953,6 @@ export class GameScene extends Phaser.Scene {
                 this.bigAmmo.setColor('#ffffff');
             }
 
-            // Reload progress bar above ammo
             if (!this.reloadBarBg) {
                 this.reloadBarBg = this.add.rectangle(this.bigAmmo.x + 15, this.bigAmmo.y - 16, 60, 6, 0x333333, 1).setOrigin(0, 0.5);
                 this.reloadBarFill = this.add.rectangle(this.bigAmmo.x + 15, this.bigAmmo.y - 16, 58, 4, 0xccaa44, 1).setOrigin(0, 0.5).setVisible(false);
@@ -882,7 +969,6 @@ export class GameScene extends Phaser.Scene {
                 this.reloadBarFill.displayWidth = 58 * ws.reloadProgress;
             }
 
-            // Highlight selected slot
             for (let s = 0; s < this.weaponSlots.length; s++) {
                 const slot = this.weaponSlots[s];
                 const active = slot.module.key === ws.currentWeapon;
@@ -897,7 +983,6 @@ export class GameScene extends Phaser.Scene {
                 }
             }
 
-            // Grapple cooldown
             const gReady = p.canGrapple;
             this.grappleCd.setText(gReady ? 'GRAPPLE READY' : 'GRAPPLE CD');
             this.grappleCd.setColor(gReady ? '#ccaa44' : '#664422');
@@ -913,6 +998,13 @@ export class GameScene extends Phaser.Scene {
             }
             if (this.netStatus && this.netStatus.active) {
                 this.netStatus.setPosition(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT - 66);
+            }
+            // Update match timer
+            if (this.gameStartTime && this.gameDuration && this.timerText && !this.matchOver) {
+                const remaining = Math.max(0, Math.round((this.gameStartTime + this.gameDuration * 1000 - Date.now()) / 1000));
+                const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
+                const ss = String(remaining % 60).padStart(2, '0');
+                this.timerText.setText(`${mm}:${ss}`);
             }
         }
 
