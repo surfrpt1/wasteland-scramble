@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://wasteland-scramble-production-2de6.up.railway.app/sitemap.xml

@@ -39,6 +39,7 @@ const MIME = {
     '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
     '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon',
     '.svg': 'image/svg+xml', '.map': 'application/json',
+    '.txt': 'text/plain', '.xml': 'application/xml',
 };
 
 const server = createServer(async (req, res) => {
