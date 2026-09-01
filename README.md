@@ -92,10 +92,6 @@ Output goes to `dist/` folder.
 - [ ] Mobile builds (APK + iOS)
 - [ ] Additional maps and modes
 
-## Credits
-
-Built with Phaser 3 - https://phaser.io
-
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
