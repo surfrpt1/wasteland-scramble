@@ -4,6 +4,7 @@ import { MenuScene } from './scenes/MenuScene.js';
 import { LobbyScene } from './scenes/LobbyScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { GAME_CONFIG, COLORS } from './utils/constants.js';
+import { resolveServerAddr } from './net/serverAddr.js';
 
 const config = {
     type: Phaser.AUTO,
@@ -30,5 +31,10 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+
+// Make the multiplayer server address available to scenes via the registry.
+// Scenes read it with this.registry.get('serverAddr'). Resolution is shared with
+// NetClient (see src/net/serverAddr.js).
+game.registry.set('serverAddr', resolveServerAddr());
 
 export default game;

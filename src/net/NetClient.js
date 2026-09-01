@@ -2,16 +2,14 @@
 // Handles connecting, joining named rooms, sending local state + events, and
 // receiving world state, score updates, and match-end.
 import { io } from 'socket.io-client';
+import { resolveServerAddr } from './serverAddr.js';
 
 export class NetClient {
     constructor(url, roomName) {
         this.socket = null;
-        // Serve address: explicit, registry-provided, or default to same host on
-        // the multiplayer server port (3001).
-        this.url = url ||
-            (location.hostname
-                ? `${location.protocol}//${location.hostname}:3001`
-                : '');
+        // Server address resolution (see resolveServerAddr): explicit url,
+        // VITE_SERVER_URL, local :3001, or same-origin when deployed on Railway.
+        this.url = url ? String(url) : resolveServerAddr();
         this.roomName = roomName || 'default';
         this.playerIndex = 0;
         this.connected = false;
