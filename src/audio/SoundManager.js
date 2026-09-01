@@ -14,6 +14,7 @@ export class SoundManager {
         this.sfxEnabled = true;
         this.musicGain = null;
         this.sfxGain = null;
+        this.musicRequested = false;
 
         // Per-weapon SFX presets (built once, reused)
         this.cache = {};
@@ -40,6 +41,9 @@ export class SoundManager {
             this.sfxGain.connect(this.master);
         }
         if (this.ctx.state === 'suspended') this.ctx.resume();
+        // If music was requested before the audio context existed (e.g. the menu
+        // theme started at scene create), begin it now that we can make sound.
+        if (this.musicRequested) this.startMusic();
     }
 
     // ---- Low-level helpers ----
@@ -280,6 +284,7 @@ export class SoundManager {
     // A slow, moody post-apocalyptic drone: open-fifth bass line under a sparse
     // minor melody. Fully synthesized with oscillators - 100% original.
     startMusic() {
+        this.musicRequested = true;
         if (!this.musicEnabled || !this.ctx || this.musicNodes) return;
         this.musicNodes = [];
 
@@ -341,6 +346,7 @@ export class SoundManager {
     }
 
     stopMusic() {
+        this.musicRequested = false;
         if (this.musicLoop) { clearTimeout(this.musicLoop); this.musicLoop = null; }
         if (this.musicNodes) {
             for (const n of this.musicNodes) {

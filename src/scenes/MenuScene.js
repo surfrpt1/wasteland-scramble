@@ -105,7 +105,7 @@ export class MenuScene extends Phaser.Scene {
             'CONTROLS:',
             'WASD - Move    |    MOUSE - Aim & Shoot',
             'R - Reload    |    RIGHT CLICK - Grapple Hook    |    SPACE - Jump',
-            'SHIFT - Slide    |    Q - Wall Cling    |    1-4 - Switch Weapons',
+            'SHIFT - Slide    |    Q - Wall Cling    |    1-4 - Switch Weapons    |    M - Sound',
         ].join('\n'), controlsStyle).setOrigin(0.5);
 
         this.add.text(cx, GAME_CONFIG.HEIGHT - 20, 'v0.1.0 - Prototype', {
@@ -114,21 +114,16 @@ export class MenuScene extends Phaser.Scene {
             color: '#443322',
         }).setOrigin(0.5);
 
-        // Sound toggle button (persists across the session via registry)
+        // Sound toggle button (top-left; persists across the session via registry)
         this.soundOn = this.registry.get('soundEnabled') !== false;
         if (this.sound) { this.sound.enabled = this.soundOn; this.sound.setMaster(this.soundOn); }
-        const soundBtn = this.createButton(
-            cx - 160, GAME_CONFIG.HEIGHT - 60,
-            this.soundOn ? 'SOUND: ON (M)' : 'SOUND: OFF (M)',
-            () => {
-                this.soundOn = !this.soundOn;
-                this.registry.set('soundEnabled', this.soundOn);
-                if (this.sound) { this.sound.enabled = this.soundOn; this.sound.setMaster(this.soundOn); }
-                label.setText(this.soundOn ? 'SOUND: ON (M)' : 'SOUND: OFF (M)');
-            }
-        );
-        const label = soundBtn.label;
-        label.setFontSize(16);
+        this.createToggleButton(24, 24, this.soundOn, (label, isOn) => {
+            this.soundOn = isOn;
+            this.registry.set('soundEnabled', isOn);
+            if (this.sound) { this.sound.enabled = isOn; this.sound.setMaster(isOn); }
+            label.setText(isOn ? 'SOUND: ON' : 'SOUND: OFF');
+            label.setColor(isOn ? '#aaffaa' : '#ff6666');
+        });
 
         // Store initial name in registry
         this.registry.set('playerName', savedName);
@@ -181,6 +176,30 @@ export class MenuScene extends Phaser.Scene {
         });
 
         bg.on('pointerdown', () => { if (this.sound) this.sound.click(); callback(); });
+        return { bg, label };
+    }
+
+    createToggleButton(x, y, initialOn, onToggle) {
+        const bg = this.add.rectangle(x, y, 116, 32, 0x2a1a10, 0.85)
+            .setStrokeStyle(1, 0xccaa44)
+            .setInteractive({ useHandCursor: true });
+        const label = this.add.text(x, y, initialOn ? 'SOUND: ON' : 'SOUND: OFF', {
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            color: initialOn ? '#aaffaa' : '#ff6666',
+        }).setOrigin(0.5);
+
+        bg.on('pointerover', () => {
+            bg.setFillStyle(0x3d2b1f);
+            const c = label.color;
+            label.setColor(c === '#aaffaa' ? '#ccffcc' : '#ff8888');
+        });
+        bg.on('pointerout', () => { bg.setFillStyle(0x2a1a10); });
+        bg.on('pointerdown', () => {
+            if (this.sound) this.sound.click();
+            onToggle(label, !initialOn);
+            initialOn = !initialOn;
+        });
         return { bg, label };
     }
 

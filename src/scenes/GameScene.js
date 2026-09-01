@@ -130,8 +130,7 @@ export class GameScene extends Phaser.Scene {
         muteKey.on('down', () => {
             const audio = this.registry.get('sound');
             if (audio) {
-                audio.enabled = !audio.enabled;
-                audio.setMaster(audio.enabled);
+                this.setSoundEnabled(!audio.enabled);
                 const msg = audio.enabled ? 'SOUND ON' : 'SOUND OFF';
                 if (this.killFeed) this.showKillFeedText(msg);
             }
@@ -646,9 +645,20 @@ export class GameScene extends Phaser.Scene {
             .setOrigin(0.5, 0);
         ui.add(this.topBar);
 
+        // Sound toggle (top-left corner)
+        const soundBtnBg = this.add.rectangle(16, 22, 96, 30, 0x2a1a10, 0.85)
+            .setOrigin(0, 0.5)
+            .setStrokeStyle(1, 0xccaa44)
+            .setInteractive({ useHandCursor: true });
+        this.soundBtnLabel = this.add.text(64, 22, 'SOUND: ON', {
+            fontSize: '13px', fontFamily: 'monospace', color: '#aaffaa', fontStyle: 'bold'
+        }).setOrigin(0.5);
+        soundBtnBg.on('pointerup', () => { this.setSoundEnabled(!(this.registry.get('sound') || {}).enabled); });
+        ui.add([soundBtnBg, this.soundBtnLabel]);
+
         // Health (top-left)
-        this.healthBarBg = this.add.rectangle(130, 22, 180, 18, 0x222222, 1).setOrigin(0, 0.5);
-        this.healthBarFill = this.add.rectangle(131, 22, 178, 16, 0x44cc44, 1).setOrigin(0, 0.5);
+        this.healthBarBg = this.add.rectangle(210, 22, 180, 18, 0x222222, 1).setOrigin(0, 0.5);
+        this.healthBarFill = this.add.rectangle(211, 22, 178, 16, 0x44cc44, 1).setOrigin(0, 0.5);
         this.healthText = this.add.text(318, 14, '100', {
             fontSize: '15px', fontFamily: 'monospace', color: '#ffffff', fontStyle: 'bold'
         });
@@ -786,6 +796,19 @@ export class GameScene extends Phaser.Scene {
     showKillFeedText(msg) {
         this.killFeed.setText(msg);
         this.time.delayedCall(2500, () => this.killFeed.setText(''));
+    }
+
+    setSoundEnabled(on) {
+        const audio = this.registry.get('sound');
+        if (audio) {
+            audio.enabled = on;
+            audio.setMaster(on);
+            this.registry.set('soundEnabled', on);
+        }
+        if (this.soundBtnLabel) {
+            this.soundBtnLabel.setText(on ? 'SOUND: ON' : 'SOUND: OFF');
+            this.soundBtnLabel.setColor(on ? '#aaffaa' : '#ff6666');
+        }
     }
 
     // Update the top-center score text for non-online modes (practice/ffa),
