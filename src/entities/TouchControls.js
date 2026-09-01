@@ -184,6 +184,13 @@ export class TouchControls {
         this.doneCircle = this.scene.add.circle(180, 98, 38, 0x44aa44, 0.95).setStrokeStyle(3, 0xffffff, 0.9).setDepth(325);
         this.doneText = this.scene.add.text(180, 98, 'SAVE', { fontSize: '15px', fontFamily: 'monospace', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(325);
         this.panel.add([this.doneCircle, this.doneText]);
+
+        // Leave/exit button — returns to the main menu and (in online mode)
+        // disconnects from the server. Positioned in the bottom row between RESET
+        // and SAVE so it doesn't crowd either.
+        this.exitRect = this.scene.add.rectangle(0, 98, 220, 56, 0xbb3333, 0.9).setStrokeStyle(2, 0xffffff, 0.8).setDepth(325);
+        this.exitText = this.scene.add.text(0, 98, 'BACK TO MENU', { fontSize: '14px', fontFamily: 'monospace', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5).setDepth(325);
+        this.panel.add([this.exitRect, this.exitText]);
     }
 
     // Current radius of the selected control ('' -> default)
@@ -393,6 +400,14 @@ export class TouchControls {
         this.saveLayout();
     }
 
+    // Leave the current match. Closes settings first (so the player returns to a
+    // clean UI), then runs the scene-provided exit callback (defaults to MenuScene).
+    triggerExit() {
+        this.closeSettings();
+        if (this.onExit) this.onExit();
+        else this.scene.scene.start('MenuScene');
+    }
+
     resetLayout() {
         this.layout = resetLayoutOverride();
         this.applyLayout();
@@ -403,6 +418,11 @@ export class TouchControls {
     settingsDown(x, y, pointer) {
         if (this.near({ x: this.panelX + this.doneCircle.x, y: this.panelY + this.doneCircle.y, radius: this.doneCircle.radius }, x, y, 22)) { this.closeSettings(); return; }
         if (this.near({ x: this.panelX + this.resetCircle.x, y: this.panelY + this.resetCircle.y, radius: this.resetCircle.radius }, x, y, 24)) { this.resetLayout(); return; }
+
+        // BACK TO MENU — leave the match. Forwards to a callback (set by GameScene)
+        // so it can also disconnect from the server before navigating. The button is
+        // a 220x56 rectangle at panel-local (0,98); hit-test its full bounds.
+        if (x >= this.panelX - 110 && x <= this.panelX + 110 && y >= this.panelY + 98 - 34 && y <= this.panelY + 98 + 34) { this.triggerExit(); return; }
 
         // Select a control to resize. The chip circles live inside the panel
         // container, so their .x/.y are panel-local; convert to screen coords.

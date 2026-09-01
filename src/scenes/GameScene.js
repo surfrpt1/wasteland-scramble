@@ -132,6 +132,10 @@ export class GameScene extends Phaser.Scene {
         this.touchControls = new TouchControls(this);
         window.__ws = this.touchControls;
 
+        // "BACK TO MENU" inside the settings panel leaves the current match.
+        // In online mode the scene SHUTDOWN handler disconnects from the server.
+        this.touchControls.onExit = () => this.scene.start('MenuScene');
+
         this.events.on('playerDied', (player, cause) => {
             // In online mode the server-driven elim event already shows the feed.
             if (this.gameMode !== 'online') {
