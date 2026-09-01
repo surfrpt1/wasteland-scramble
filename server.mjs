@@ -182,9 +182,10 @@ io.on('connection', (socket) => {
         if (cur && cur.x !== undefined) {
             const dx = x - cur.x, dy = y - cur.y;
             const d = Math.hypot(dx, dy);
-            if (d > MAX_SPEED * (TICK / 1000) * 2.5) {
-                x = cur.x + (dx / d) * MAX_SPEED;
-                y = cur.y + (dy / d) * MAX_SPEED;
+            const maxStep = MAX_SPEED * (TICK / 1000) * 2.5;
+            if (d > maxStep) {
+                x = cur.x + (dx / d) * maxStep;
+                y = cur.y + (dy / d) * maxStep;
             }
         }
         room.state.set(socket.id, {
@@ -209,11 +210,16 @@ io.on('connection', (socket) => {
         if (now - hp.lastFire < wcfg.fireRate) return;
         hp.lastFire = now;
 
-        // Reject shots fired from a position far from the player's known spot.
+        // Reject only egregious teleport-origin shots. The bullet ALWAYS spawns at
+        // the server's own stored position (st.x/st.y) below, so this is just a
+        // sanity gate against absurd clients. It must be generous: under real
+        // network latency a moving player's on-screen position legitimately leads
+        // the server's last-stored position by >60px, and a tight tolerance was
+        // silently dropping most in-play shots (so kills never registered).
         const angle = Number(data.angle) || 0;
         const sx = st.x, sy = st.y - 8;
         if (data.x !== undefined && data.y !== undefined) {
-            if (Math.hypot(Number(data.x) - sx, Number(data.y) - sy) > 60) return;
+            if (Math.hypot(Number(data.x) - sx, Number(data.y) - sy) > 300) return;
         }
         const spread = (Math.random() - 0.5) * wcfg.spread * 2;
         const a = angle + spread;

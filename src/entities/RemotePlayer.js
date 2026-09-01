@@ -75,8 +75,10 @@ export class RemotePlayer {
         this.weaponSprite.setVisible(true);
         this.nametag.setVisible(true);
 
-        // Interpolate toward the latest target (smooth catch-up).
-        const k = Math.min(1, (delta / 1000) * 12);
+        // Interpolate toward the latest target (smooth catch-up). k is tuned so
+        // remotes track the server snapshots responsively without visible jitter
+        // at the 20Hz relay rate (reduces perceived peer lag).
+        const k = Math.min(1, (delta / 1000) * 16);
         const x = this.sprite.x + (this.targetX - this.sprite.x) * k;
         const y = this.sprite.y + (this.targetY - this.sprite.y) * k;
         this.sprite.setPosition(x, y);
