@@ -44,23 +44,18 @@ game.registry.set('serverAddr', resolveServerAddr());
 const soundManager = new SoundManager();
 game.registry.set('sound', soundManager);
 
-// Unlock audio on the first interaction (pointer/keyboard).
-// Note: `game.input`/`game.input.keyboard` plugins are created during the
-// game boot (asynchronously), so register with them once the game is READY.
-// Window-level listeners are registered immediately and don't depend on the
-// game's plugin lifecycle (a browser gesture is what starts the AudioContext).
+// Unlock audio on the first interaction.
+// Only window-level listeners are needed: browsers start the AudioContext only
+// after a real user gesture, and every pointer/keyboard interaction on the page
+// reaches `window`. We deliberately avoid the game input plugin here because it
+// isn't fully initialized until late in boot, and its API isn't guaranteed to
+// expose `.on` at the moment the game's READY event fires.
 const unlock = () => {
     soundManager.ensure();
     window.removeEventListener('pointerdown', unlock);
     window.removeEventListener('keydown', unlock);
-    if (game.input) game.input.off('pointerdown', unlock);
-    if (game.input && game.input.keyboard) game.input.keyboard.off('keydown', unlock);
 };
 window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);
-game.events.once('ready', () => {
-    if (game.input) game.input.on('pointerdown', unlock);
-    if (game.input && game.input.keyboard) game.input.keyboard.on('keydown', unlock);
-});
 
 export default game;
