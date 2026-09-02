@@ -162,11 +162,15 @@ export class GameScene extends Phaser.Scene {
 
         this.gameTime = 0;
 
-        // Online mode time tracking
+        // Online mode time tracking. NOTE: setupNet() (called via
+        // createPlayers() above) already populated gameDuration/gameStartTime
+        // from the waiting room for online mode, so don't clobber them here.
         this.matchEndTime = null;
         this.matchStartTime = null;
-        this.gameDuration = 0;
-        this.gameStartTime = null;
+        if (this.gameMode !== 'online') {
+            this.gameDuration = 0;
+            this.gameStartTime = null;
+        }
 
         // Local mode: set up countdown timer from scene data
         if (this.gameMode !== 'online' && this.initGameDuration > 0) {
@@ -209,6 +213,13 @@ export class GameScene extends Phaser.Scene {
             this.net = new NetClient(this.registry.get('serverAddr'), roomName);
             this.net.connect();
         }
+
+        // Propagate the host-selected match timing captured by the waiting room,
+        // regardless of whether we reused the existing socket or fresh-joined.
+        // This makes the in-game countdown reflect the room host's chosen
+        // duration (300/600/900) instead of staying at 0 / never displaying.
+        if (this.net.gameDuration) this.gameDuration = this.net.gameDuration;
+        if (this.net.gameStartTime) this.gameStartTime = this.net.gameStartTime;
 
         this.netConnected = false;
         this.lastHitByRemote = null;
@@ -377,9 +388,6 @@ export class GameScene extends Phaser.Scene {
             // Already connected (from WaitingRoomScene), just send state
             this.netConnected = true;
             this.net.playerIndex = this.net.playerIndex || 0;
-            // Capture game timing stored by the waiting room
-            if (this.net.gameDuration) this.gameDuration = this.net.gameDuration;
-            if (this.net.gameStartTime) this.gameStartTime = this.net.gameStartTime;
             if (this.net.joinData) {
                 const d = this.net.joinData;
                 if (d.name) this.playerNames[this.net.socket.id] = d.name;

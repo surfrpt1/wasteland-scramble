@@ -367,6 +367,11 @@ io.on('connection', (socket) => {
             vx: Math.cos(a) * wcfg.speed,
             vy: Math.sin(a) * wcfg.speed,
             life: wcfg.lifetime / 1000,
+            // Spawn grace: skip collision for the first couple ticks so a bomb
+            // launched while overlapping adjacent geometry (e.g. thrown right
+            // next to a wall at a spawn point) doesn't instantly detonate at
+            // the thrower's feet. Mirrors the client's birth-frame grace.
+            skip: 2,
         });
 
         // Tell the OTHER clients to draw this incoming bullet. The shooter
@@ -520,6 +525,17 @@ setInterval(() => {
         for (const b of room.bullets) {
             b.life -= dt;
             if (b.life <= 0) continue;
+
+            // Spawn grace: let the bullet clear the launch position before it is
+            // tested against walls / players, so it never detonates on geometry
+            // it was spawned overlapping (no instant point-blank bomb kills).
+            if (b.skip && b.skip > 0) {
+                b.skip--;
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                activeBullets.push(b);
+                continue;
+            }
 
             const px = b.x, py = b.y;
             b.x += b.vx * dt;
