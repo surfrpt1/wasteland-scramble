@@ -16,6 +16,7 @@ export class GameScene extends Phaser.Scene {
     init(data) {
         this.gameMode = data.mode || 'practice';
         this.initRoomName = data.roomName || null;
+        this.initGameDuration = data.gameDuration || 0;
     }
 
     create() {
@@ -160,6 +161,12 @@ export class GameScene extends Phaser.Scene {
         this.matchStartTime = null;
         this.gameDuration = 0;
         this.gameStartTime = null;
+
+        // Local mode: set up countdown timer from scene data
+        if (this.gameMode !== 'online' && this.initGameDuration > 0) {
+            this.gameDuration = this.initGameDuration;
+            this.gameStartTime = Date.now();
+        }
 
         // Camera follow player 0
         this.cameras.main.startFollow(this.players[0].sprite, true, 0.08, 0.08);
@@ -453,7 +460,7 @@ export class GameScene extends Phaser.Scene {
             const rankColors = ['#ffd700', '#c0c0c0', '#cd7f32', '#e0d0c0', '#e0d0c0', '#e0d0c0'];
             for (const r of list) {
                 const color = rankColors[(r.rank - 1)] || '#e0d0c0';
-                const rankPrefix = r.rank === 1 ? '[WINNER] ' : '';
+                const rankPrefix = r.rank === 1 ? '\u2605 ' : '';
                 const nameStr = r.name || `P${(r.playerIndex || 0) + 1}`;
                 const isMe = this.net && this.net.socket && r.id === this.net.socket.id;
                 const meTag = isMe ? ' (YOU)' : '';
@@ -511,8 +518,28 @@ export class GameScene extends Phaser.Scene {
             this.registry.set('netClient', null);
             this.scene.start('LobbyScene');
         } else {
-            this.scene.start('GameScene', { mode: this.gameMode });
+            this.scene.start('GameScene', { mode: this.gameMode, gameDuration: this.gameDuration || this.initGameDuration });
         }
+    }
+
+    // Local mode (practice/ffa): time is up, freeze the match and show the
+    // ranking screen built from the local scoreboard, mirroring online end-of-match.
+    endLocalMatch() {
+        if (this.matchOver) return;
+        this.matchOver = true;
+        const myName = this.registry.get('playerName') || 'YOU';
+        const list = this.players
+            .map((p, i) => ({
+                rank: 0,
+                id: `local-${i}`,
+                name: p.isBot ? `Raider ${p.playerId}` : myName,
+                playerIndex: i,
+                kills: this.scores[i] || 0,
+                isWinner: false,
+            }))
+            .sort((a, b) => b.kills - a.kills)
+            .map((r, i) => ({ ...r, rank: i + 1, isWinner: i === 0 }));
+        this.showRankingsScreen(null, list);
     }
 
     showWinScreen(winnerId) {
@@ -689,16 +716,32 @@ export class GameScene extends Phaser.Scene {
             .setOrigin(0.5, 0);
         ui.add(this.topBar);
 
-        // Sound toggle (top-right, next to the settings gear of the touch controls)
+        // Sound toggle (top-right, next to the settings gear of the touch
+        // controls). The rectangle is pushed into the shared `ui` container, and
+        // because Phaser object-level hit-testing does not reliably fire for
+        // container children here, we drive the toggle from a scene-level
+        // pointerup handler with a manual bounds hit test (proven pattern used
+        // by TouchControls).
+        const soundOn = this.registry.get('soundEnabled') !== false;
         const soundBtnBg = this.add.rectangle(GAME_CONFIG.WIDTH - 170, 28, 96, 30, 0x2a1a10, 0.85)
             .setOrigin(0, 0.5)
-            .setStrokeStyle(1, 0xccaa44)
-            .setInteractive({ useHandCursor: true });
-        this.soundBtnLabel = this.add.text(GAME_CONFIG.WIDTH - 122, 28, 'SOUND: ON', {
-            fontSize: '13px', fontFamily: 'monospace', color: '#aaffaa', fontStyle: 'bold'
+            .setStrokeStyle(1, 0xccaa44);
+        this.soundBtnLabel = this.add.text(GAME_CONFIG.WIDTH - 122, 28, soundOn ? 'SOUND: ON' : 'SOUND: OFF', {
+            fontSize: '13px', fontFamily: 'monospace', color: soundOn ? '#aaffaa' : '#ff6666', fontStyle: 'bold'
         }).setOrigin(0.5);
-        soundBtnBg.on('pointerup', () => { this.setSoundEnabled(!(this.registry.get('sound') || {}).enabled); });
+        this.soundBtnBg = soundBtnBg;
+        this.soundBtnRect = { x: soundBtnBg.x, y: soundBtnBg.y - 15, w: 96, h: 30 };
         ui.add([soundBtnBg, this.soundBtnLabel]);
+        this.input.on('pointerup', (pointer) => {
+            const s = this.soundBtnRect;
+            const px = pointer.x, py = pointer.y;
+            if (s && this.matchOver !== true &&
+                px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h) {
+                const wasOn = (this.registry.get('sound') || {}).enabled !== false;
+                this.setSoundEnabled(!wasOn);
+                if (this.killFeed) this.showKillFeedText(wasOn ? 'SOUND OFF' : 'SOUND ON');
+            }
+        });
 
         // Health (top-left)
         this.healthBarBg = this.add.rectangle(210, 22, 180, 18, 0x222222, 1).setOrigin(0, 0.5);
@@ -716,11 +759,11 @@ export class GameScene extends Phaser.Scene {
         ui.add(this.boardContainer);
         this.refreshScoreboard();
 
-        // Timer display (top-right area, below score)
-        this.timerText = this.add.text(GAME_CONFIG.WIDTH - 14, 14, '', {
+        // Timer display (top-left, left of the health bar)
+        this.timerText = this.add.text(14, 6, '', {
             fontSize: '14px', fontFamily: 'monospace', color: '#ffcc44',
             backgroundColor: '#00000088',
-        }).setOrigin(1, 0);
+        }).setOrigin(0, 0);
         ui.add(this.timerText);
 
         // --- WEAPON SLOTS ---
@@ -812,13 +855,20 @@ export class GameScene extends Phaser.Scene {
         if (audio) audio.pickup();
         if (pickup.pickupType === 'health') {
             player.health = Math.min(player.health + 30, PLAYER_CONFIG.MAX_HEALTH);
+        } else if (pickup.pickupType === 'boost' && player.activateBoost) {
+            player.activateBoost(6000); // 6 seconds of jetpack flight
+            if (this.killFeed) this.showKillFeedText('BOOST! JETPACK: 6s');
         } else if (pickup.pickupType === 'weapon' && pickup.weapon) {
             this.selectWeapon(pickup.weapon);
             this.weapons[0].addAmmo(pickup.weapon, WEAPON_CONFIG[pickup.weapon].ammo);
         }
         pickup.body.enable = false;
         pickup.setAlpha(0);
-        this.time.delayedCall(15000, () => {
+        // Health/heal respawns faster; weapon/boost slightly slower, with a
+        // little randomness so spawned items don't all come back together.
+        const base = pickup.pickupType === 'weapon' || pickup.pickupType === 'boost' ? 18000 : 12000;
+        const respawn = base + Math.floor(Math.random() * 5000);
+        this.time.delayedCall(respawn, () => {
             if (pickup && pickup.scene) { pickup.body.enable = true; pickup.setAlpha(1); }
         });
     }
@@ -840,6 +890,10 @@ export class GameScene extends Phaser.Scene {
         if (audio) {
             audio.enabled = on;
             audio.setMaster(on);
+            // Also flip the per-stream flags the SFX/music guards actually
+            // check, so muting reliably silences regardless of gain-node state.
+            if (typeof audio.setSfx === 'function') audio.setSfx(on);
+            if (typeof audio.setMusic === 'function') audio.setMusic(on);
             this.registry.set('soundEnabled', on);
         }
         if (this.soundBtnLabel) {
@@ -1122,12 +1176,18 @@ export class GameScene extends Phaser.Scene {
             if (this.netStatus && this.netStatus.active) {
                 this.netStatus.setPosition(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT - 66);
             }
-            // Update match timer
-            if (this.gameStartTime && this.gameDuration && this.timerText && !this.matchOver) {
-                const remaining = Math.max(0, Math.round((this.gameStartTime + this.gameDuration * 1000 - Date.now()) / 1000));
-                const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
-                const ss = String(remaining % 60).padStart(2, '0');
-                this.timerText.setText(`${mm}:${ss}`);
+        }
+
+        // --- MATCH TIMER (all modes): update the countdown and end the match
+        // locally at 0 for practice/ffa so the ranking screen shows. Online is
+        // authoritative for duration, so this is read-only there.
+        if (this.gameStartTime && this.gameDuration && this.timerText && !this.matchOver) {
+            const remaining = Math.max(0, Math.round((this.gameStartTime + this.gameDuration * 1000 - Date.now()) / 1000));
+            const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
+            const ss = String(remaining % 60).padStart(2, '0');
+            this.timerText.setText(`${mm}:${ss}`);
+            if (this.gameMode !== 'online' && remaining <= 0) {
+                this.endLocalMatch();
             }
         }
 

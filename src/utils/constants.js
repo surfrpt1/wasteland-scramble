@@ -32,7 +32,7 @@ export const GRAPPLE_CONFIG = {
 export const WEAPON_CONFIG = {
     SCRAP_RIFLE: {
         name: 'Scrap Rifle',
-        damage: 15,
+        damage: 12,
         fireRate: 300,
         bulletSpeed: 800,
         bulletLifetime: 1000,
@@ -45,7 +45,7 @@ export const WEAPON_CONFIG = {
     },
     NAIL_GUN: {
         name: 'Nail Gun',
-        damage: 8,
+        damage: 5,
         fireRate: 100,
         bulletSpeed: 1000,
         bulletLifetime: 600,
@@ -58,7 +58,7 @@ export const WEAPON_CONFIG = {
     },
     PIPE_BOMB: {
         name: 'Pipe Bomb',
-        damage: 50,
+        damage: 80,
         fireRate: 1500,
         bulletSpeed: 400,
         bulletLifetime: 2000,
@@ -73,7 +73,7 @@ export const WEAPON_CONFIG = {
     },
     ACID_SPRAYER: {
         name: 'Acid Sprayer',
-        damage: 5,
+        damage: 3,
         fireRate: 50,
         bulletSpeed: 500,
         bulletLifetime: 400,

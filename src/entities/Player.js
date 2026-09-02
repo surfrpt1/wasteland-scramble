@@ -17,6 +17,11 @@ export class Player {
         this.lastJumpState = false;
         this.hp = PLAYER_CONFIG.MAX_HEALTH;
 
+        // Jetpack / boost pickups
+        this.boostTime = 0;
+        this.boostDuration = 0;
+        this.boostGlow = null;
+
         // Character sprite - generated per player
         this.sprite = scene.physics.add.sprite(x, y, `char_${playerId}`);
         this.sprite.setSize(PLAYER_CONFIG.WIDTH, PLAYER_CONFIG.HEIGHT);
@@ -52,12 +57,26 @@ export class Player {
     update(cursors, pointer, time, ctl) {
         if (!this.isAlive) return;
 
+        // Ticking down the jetpack/boost timer (time is ms of game clock).
+        if (this.boostTime > 0) {
+            if (this._lastBoost !== undefined) {
+                this.boostTime = Math.max(0, this.boostTime - (time - this._lastBoost));
+            }
+            this._lastBoost = time;
+            if (this.boostTime <= 0) { this._lastBoost = undefined; this.endBoost(); }
+            else this.pulseBoost(time);
+        } else {
+            this._lastBoost = undefined;
+        }
+
         // ctl = explicit touch/override state (booleans). Merge with keyboard.
         // Do NOT mutate Phaser Key objects (their isDown is reset by the keyboard
         // plugin each frame, which is why on-screen touch movement never stuck).
         const m = {
             left: !!(ctl && ctl.left) || !!(cursors && cursors.left && cursors.left.isDown),
             right: !!(ctl && ctl.right) || !!(cursors && cursors.right && cursors.right.isDown),
+            up: !!(ctl && ctl.up) || !!(cursors && cursors.up && cursors.up.isDown),
+            down: !!(ctl && ctl.down) || !!(cursors && cursors.down && cursors.down.isDown),
             wallCling: !!(cursors && cursors.wallCling && cursors.wallCling.isDown),
             slide: !!(cursors && cursors.slide && cursors.slide.isDown),
         };
@@ -84,6 +103,23 @@ export class Player {
         const body = this.sprite.body;
         const onGround = body.blocked.down || body.touching.down;
         const speed = PLAYER_CONFIG.SPEED * (onGround ? 1 : 0.85);
+
+        // JETPACK / BOOST: free-flight while active (no gravity, move in any
+        // direction). Takes over until the timer runs out.
+        if (this.boostTime > 0) {
+            body.setAllowGravity(false);
+            let vy = 0;
+            if (m.up) vy = -PLAYER_CONFIG.SPEED;          // W / touch-up
+            else if (m.down) vy = PLAYER_CONFIG.SPEED;    // S / touch-down
+            if (m.left) { body.setVelocityX(-PLAYER_CONFIG.SPEED); this.facingRight = false; this.sprite.setFlipX(true); }
+            else if (m.right) { body.setVelocityX(PLAYER_CONFIG.SPEED); this.facingRight = true; this.sprite.setFlipX(false); }
+            else body.setVelocityX(body.velocity.x * 0.85);
+            body.setVelocityY(vy);
+            return;
+        }
+        // When boost ends mid-air we just let gravity resume (setAllowGravity true
+        // happens lazily on next ground/wall-cling path; force it here for safety).
+        body.setAllowGravity(true);
 
         if (this.grappleActive && this.grapplePoint) {
             // Grapple pulls toward point
@@ -239,6 +275,33 @@ export class Player {
         this.weaponSprite.setTexture(tex);
     }
 
+    // Jetpack/boost pickup: grant N ms of free-flight.
+    activateBoost(duration) {
+        this.boostTime = duration;
+        this.boostDuration = duration;
+        this.sprite.body.setAllowGravity(false);
+        if (!this.boostGlow) {
+            this.boostGlow = this.scene.add.circle(this.sprite.x, this.sprite.y + 14, 12, 0x33ccff, 0.45).setDepth(9);
+        }
+        // Slight upward kick to signal flight.
+        this.sprite.body.setVelocityY(-120);
+    }
+
+    endBoost() {
+        this.boostTime = 0;
+        this.boostDuration = 0;
+        this.sprite.body.setAllowGravity(true);
+        if (this.boostGlow) { this.boostGlow.destroy(); this.boostGlow = null; }
+    }
+
+    pulseBoost(time) {
+        if (this.boostGlow) {
+            this.boostGlow.setPosition(this.sprite.x, this.sprite.y + 14);
+            const flicker = 0.3 + 0.2 * Math.sin(time * 0.02);
+            this.boostGlow.setAlpha(flicker);
+        }
+    }
+
     updateWeapon(pointer) {
         if (!this.weaponSprite) return;
         const wx = this.sprite.x;
@@ -303,6 +366,7 @@ export class Player {
         this.weaponSprite.setVisible(false);
         this.grappleLine.clear();
         this.hpBar.clear();
+        if (this.boostGlow) { this.boostGlow.destroy(); this.boostGlow = null; }
         if (this.audio) this.audio.death();
         this.scene.events.emit('playerDied', this, cause);
         this.scene.time.delayedCall(3000, () => this.respawn());
@@ -319,6 +383,8 @@ export class Player {
         this.sprite.setPosition(s.x, s.y);
         this.sprite.body.setVelocity(0, 0);
         this.weaponSprite.setVisible(true);
+        this.boostTime = 0;
+        this.sprite.body.setAllowGravity(true);
         this.releaseGrapple();
         this.scene.events.emit('playerRespawned', this, s.x, s.y);
     }

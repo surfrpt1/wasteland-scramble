@@ -81,12 +81,12 @@ export class MenuScene extends Phaser.Scene {
         // Buttons
         this.createButton(cx, cy + 110, 'LOCAL BATTLE', () => {
             this.saveName();
-            this.scene.start('GameScene', { mode: 'ffa' });
+            this.scene.start('GameScene', { mode: 'ffa', gameDuration: 600 });
         });
 
         this.createButton(cx, cy + 170, 'PRACTICE VS BOTS', () => {
             this.saveName();
-            this.scene.start('GameScene', { mode: 'practice' });
+            this.scene.start('GameScene', { mode: 'practice', gameDuration: 600 });
         });
 
         this.createButton(cx, cy + 230, 'ONLINE (EXPERIMENTAL)', () => {

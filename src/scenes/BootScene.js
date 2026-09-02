@@ -310,6 +310,19 @@ export class BootScene extends Phaser.Scene {
         g.lineBetween(20, 0, 0, 14);
         g.generateTexture('weapon_pickup', 20, 14);
 
+        // Jetpack / boost pickup - cyan canister with a flame base
+        g.clear();
+        g.fillStyle(0x1a3a4a, 1);
+        g.fillRect(3, 0, 14, 16);
+        g.fillStyle(0x33ccff, 1);
+        g.fillRect(3, 0, 14, 4);
+        g.fillRect(5, 5, 10, 7);
+        g.fillStyle(0x77ddff, 1);
+        g.fillRect(8, 6, 4, 5);
+        g.fillStyle(0xffaa33, 1);
+        g.fillTriangle(10, 16, 6, 22, 14, 22);
+        g.generateTexture('boost_pickup', 20, 22);
+
         // Explosion
         g.clear();
         // outer
