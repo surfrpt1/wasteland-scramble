@@ -608,13 +608,15 @@ function hitSomething(room, roomName, b, best) {
 
     if (wcfg.explosive) {
         for (const [pid, st] of room.state) {
-            if (pid === b.owner) continue; // a player is never hurt by their own bomb
             if (!st) continue;
             const hp = room.hp.get(pid);
             if (!hp || !hp.alive) continue;
             const d = Math.hypot(hx - st.x, hy - (st.y - 8));
             if (d < wcfg.radius) {
                 const falloff = 1 - (d / wcfg.radius);
+                // The launcher is NOT exempt: you take damage from your own bomb
+                // if it explodes near you (thrown into a wall, falls back on you,
+                // or you stand in its blast). A self-inflicted death awards no kill.
                 applyDamage(room, roomName, pid, b.owner, wcfg.damage * falloff);
             }
         }

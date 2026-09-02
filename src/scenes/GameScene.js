@@ -436,7 +436,8 @@ export class GameScene extends Phaser.Scene {
 
     showRankingsScreen(winnerId, rankings) {
         const overlay = this.add.rectangle(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT / 2,
-            GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT, 0x000000, 0.82).setDepth(200);
+            GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT, 0x000000, 0.82)
+            .setScrollFactor(0).setDepth(200);
 
         const iWon = winnerId && this.net && this.net.socket && winnerId === this.net.socket.id;
         const audio = this.registry.get('sound');
@@ -449,7 +450,7 @@ export class GameScene extends Phaser.Scene {
                 fontSize: iWon ? '52px' : '46px', fontFamily: 'monospace',
                 color: iWon ? '#44ff44' : (winnerId ? '#ff4444' : '#ffcc44'),
                 fontStyle: 'bold', backgroundColor: '#00000088',
-            }).setOrigin(0.5).setDepth(201);
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
 
         // Build the ranked list. If the server payload is empty, fall back to
         // the scoreboard we already have so the screen NEVER shows only the
@@ -485,13 +486,13 @@ export class GameScene extends Phaser.Scene {
                         color: r.rank === 1 ? '#ffd700' : color,
                         fontStyle: r.rank === 1 ? 'bold' : 'normal',
                         backgroundColor: '#00000000',
-                    }).setOrigin(0.5).setDepth(201);
+                    }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
                 y += 36;
             }
         } else {
             this.add.text(GAME_CONFIG.WIDTH / 2, y, 'NO SCORES YET - MATCH ENDED', {
                 fontSize: '18px', fontFamily: 'monospace', color: '#cccccc',
-            }).setOrigin(0.5).setDepth(201);
+            }).setOrigin(0.5).setScrollFactor(0).setDepth(201);
         }
 
         // Buttons: Play Again + Main Menu.
@@ -508,12 +509,13 @@ export class GameScene extends Phaser.Scene {
     createEndButton(x, y, text, callback) {
         const bg = this.add.rectangle(x, y, 300, 46, 0x3d2b1f, 1)
             .setStrokeStyle(2, 0xccaa44)
+            .setScrollFactor(0)
             .setInteractive({ useHandCursor: true })
             .setDepth(202);
         const label = this.add.text(x, y, text, {
             fontSize: '20px', fontFamily: 'monospace', color: '#e0d0c0',
             padding: { x: 10, y: 6 },
-        }).setOrigin(0.5).setDepth(203);
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(203);
         bg.on('pointerover', () => { bg.setFillStyle(0x5c4033, 1); label.setColor('#ffffff'); });
         bg.on('pointerout', () => { bg.setFillStyle(0x3d2b1f, 1); label.setColor('#e0d0c0'); });
         bg.on('pointerup', () => {
@@ -1031,8 +1033,6 @@ export class GameScene extends Phaser.Scene {
                     player.sprite.x, player.sprite.y - 8, aimX, aimY
                 );
 
-                const touchGrapple = this.touchControls.state.grapple;
-
                 if (wantsShoot && player.isAlive && !this.weapons[0].isReloadingWeapon) {
                     const angle = Phaser.Math.Angle.Between(
                         player.sprite.x, player.sprite.y - 8, aimX, aimY
@@ -1051,7 +1051,10 @@ export class GameScene extends Phaser.Scene {
                     }
                 }
 
-                if ((touchGrapple || this.touchControls.state.grapplePressed) && player.canGrapple && !player.grappleActive) {
+                // One tap = one hook. On touch the HOOK button sets a press-edge
+                // flag (grapplePressed) that is consumed once per update, so the
+                // hook only fires on a fresh press - holding it never re-launches.
+                if (this.touchControls.state.grapplePressed && player.canGrapple && !player.grappleActive) {
                     player.fireGrapple(player.sprite.x + (player.facingRight ? 1 : -1) * 150, player.sprite.y - 120);
                 }
             }
@@ -1073,6 +1076,15 @@ export class GameScene extends Phaser.Scene {
             const by = bullet.y;
             const dx = bx - ax;
             const dy = by - ay;
+
+            // Spawn grace (skip): let an explosive clear the launch
+            // position before it can detonate on geometry it was spawned
+            // overlapping. Mirrors server.mjs's skip counter. While skipping we
+            // still let the physics body fly; we just don't resolve contacts yet.
+            if (bullet.skip && bullet.skip > 0) {
+                bullet.skip--;
+                return;
+            }
 
             // 1) Player contact (tunneling-safe distance to travelled segment).
             //    For a local bullet (ownerIdx set) any other alive player; for a

@@ -119,10 +119,13 @@ export class WeaponSystem {
             bullet.damage = cfg.damage;
             bullet.explosive = cfg.explosive || false;
             bullet.explosionRadius = cfg.explosionRadius || 0;
-            // Birth stamp used to skip surface-collision on the exact frame a
-            // bullet is created, so a shot spawned right next to a wall doesn't
-            // instantly vaporize before the player can see (or hear) it fly.
+            // Birth stamp + spawn-grace ticks. The skip counter lets a projectile
+            // (especially a Pipe Bomb) clear the launch position before any
+            // surface/player contact can detonate it, so a bomb thrown right
+            // next to a wall doesn't instantly pop at the thrower's feet. This
+            // mirrors the server's skip grace (server.mjs).
             bullet.born = this.scene.time.now;
+            bullet.skip = bullet.explosive ? 2 : 0;
 
             // Explosive projectiles (Pipe Bomb) DO NOT auto-detonate when their
             // lifetime expires - they only explode on contact with a surface,
@@ -170,6 +173,7 @@ export class WeaponSystem {
             bullet.explosionRadius = cfg.explosionRadius || 0;
             bullet.weaponKey = weaponKey;
             bullet.born = this.scene.time.now;
+            bullet.skip = bullet.explosive ? 2 : 0;
 
             // No auto-detonation on lifetime expiry - bombs only explode on
             // impact with a surface or player.
@@ -200,16 +204,15 @@ export class WeaponSystem {
         for (let idx = 0; idx < this.scene.players.length; idx++) {
             const player = this.scene.players[idx];
             if (!player.isAlive) continue;
-            // A player is never hurt by their OWN bomb/blast, so throwing a
-            // Pipe Bomb next to a wall (where it explodes a foot in front of
-            // you) can't kill or damage the thrower themselves.
-            if (sourceIdx !== undefined && idx === sourceIdx) continue;
+            // The launcher IS hurt by their own blast: a bomb lobbed into a wall
+            // in front of you, or one that lands on / near you, damages you too.
+            // So throw carefully, and don't stand on your own bomb.
             const dx = player.sprite.x - x;
             const dy = player.sprite.y - y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist < radius) {
                 const falloff = 1 - (dist / radius);
-                if (sourceIdx !== undefined) player.lastHitFrom = sourceIdx;
+                player.lastHitFrom = sourceIdx !== undefined ? sourceIdx : player.lastHitFrom;
                 player.takeDamage(damage * falloff);
             }
         }
