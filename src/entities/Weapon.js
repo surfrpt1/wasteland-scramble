@@ -119,6 +119,10 @@ export class WeaponSystem {
             bullet.damage = cfg.damage;
             bullet.explosive = cfg.explosive || false;
             bullet.explosionRadius = cfg.explosionRadius || 0;
+            // Birth stamp used to skip surface-collision on the exact frame a
+            // bullet is created, so a shot spawned right next to a wall doesn't
+            // instantly vaporize before the player can see (or hear) it fly.
+            bullet.born = this.scene.time.now;
 
             // Explosive projectiles (Pipe Bomb) DO NOT auto-detonate when their
             // lifetime expires - they only explode on contact with a surface,
@@ -165,6 +169,7 @@ export class WeaponSystem {
             bullet.explosive = cfg.explosive || false;
             bullet.explosionRadius = cfg.explosionRadius || 0;
             bullet.weaponKey = weaponKey;
+            bullet.born = this.scene.time.now;
 
             // No auto-detonation on lifetime expiry - bombs only explode on
             // impact with a surface or player.
@@ -192,8 +197,13 @@ export class WeaponSystem {
             onComplete: () => explosion.destroy(),
         });
 
-        for (const player of this.scene.players) {
+        for (let idx = 0; idx < this.scene.players.length; idx++) {
+            const player = this.scene.players[idx];
             if (!player.isAlive) continue;
+            // A player is never hurt by their OWN bomb/blast, so throwing a
+            // Pipe Bomb next to a wall (where it explodes a foot in front of
+            // you) can't kill or damage the thrower themselves.
+            if (sourceIdx !== undefined && idx === sourceIdx) continue;
             const dx = player.sprite.x - x;
             const dy = player.sprite.y - y;
             const dist = Math.sqrt(dx * dx + dy * dy);

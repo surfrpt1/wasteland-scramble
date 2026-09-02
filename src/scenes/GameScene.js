@@ -1092,8 +1092,13 @@ export class GameScene extends Phaser.Scene {
 
             // 2) Surface contact (segment vs solid rect). Bomb explodes at the
             //    contact point; normal bullets stop so they don't fly through.
+            //    Skipped on the bullet's own birth frame so a shot that spawns
+            //    right next to a wall isn't instantly vaporized before it can
+            //    visibly leave the gun (and so close-range bombs don't detonate
+            //    point-blank on the thrower due to wall adjacency).
+            const firstFrame = this.time.now === bullet.born;
             let hitSurface = false;
-            if (dx !== 0 || dy !== 0) {
+            if (!firstFrame && (dx !== 0 || dy !== 0)) {
                 for (const r of this.solidRects) {
                     if (segRect(ax, ay, bx, by, r.x, r.y, r.w, r.h)) { hitSurface = true; break; }
                 }

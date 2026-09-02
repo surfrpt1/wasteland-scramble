@@ -368,6 +368,16 @@ io.on('connection', (socket) => {
             vy: Math.sin(a) * wcfg.speed,
             life: wcfg.lifetime / 1000,
         });
+
+        // Tell the OTHER clients to draw this incoming bullet. The shooter
+        // draws their own locally, so exclude them to avoid a ghost duplicate.
+        socket.to(roomName).emit('fx', {
+            type: 'shot',
+            x: sx,
+            y: sy,
+            angle: a,
+            weapon: data && data.weapon ? data.weapon : 'SCRAP_RIFLE',
+        });
     });
 
     socket.on('player-respawn', (data) => {
@@ -582,6 +592,7 @@ function hitSomething(room, roomName, b, best) {
 
     if (wcfg.explosive) {
         for (const [pid, st] of room.state) {
+            if (pid === b.owner) continue; // a player is never hurt by their own bomb
             if (!st) continue;
             const hp = room.hp.get(pid);
             if (!hp || !hp.alive) continue;
