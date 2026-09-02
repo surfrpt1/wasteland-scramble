@@ -148,7 +148,7 @@ export class GameScene extends Phaser.Scene {
                 if (cause === 'combat') {
                     const killerIdx = player.lastHitFrom !== undefined ? player.lastHitFrom : 0;
                     this.scores[killerIdx] = (this.scores[killerIdx] || 0) + 1;
-                    this.updateLocalKillText();
+                    this.refreshScoreboard();
                 }
             }
         });
@@ -409,13 +409,8 @@ export class GameScene extends Phaser.Scene {
                 this.netScoreboard.setText('SCORE\n' + lines.join('\n'));
             }
         }
-        // Update the top-center score text with local player's kills
-        if (this.scoreText && this.net) {
-            const myId = this.net.socket ? this.net.socket.id : null;
-            const myScore = this.onlineScores.find(s => s.id === myId);
-            const myKills = myScore ? myScore.kills : 0;
-            this.scoreText.setText(`KILLS: ${myKills}`);
-        }
+        // Refresh the compact top-bar scoreboard with the latest room scores.
+        this.refreshScoreboard();
     }
 
     showRankingsScreen(winnerId, rankings) {
@@ -694,12 +689,12 @@ export class GameScene extends Phaser.Scene {
             .setOrigin(0.5, 0);
         ui.add(this.topBar);
 
-        // Sound toggle (top-left corner)
-        const soundBtnBg = this.add.rectangle(16, 22, 96, 30, 0x2a1a10, 0.85)
+        // Sound toggle (top-right, next to the settings gear of the touch controls)
+        const soundBtnBg = this.add.rectangle(GAME_CONFIG.WIDTH - 170, 28, 96, 30, 0x2a1a10, 0.85)
             .setOrigin(0, 0.5)
             .setStrokeStyle(1, 0xccaa44)
             .setInteractive({ useHandCursor: true });
-        this.soundBtnLabel = this.add.text(64, 22, 'SOUND: ON', {
+        this.soundBtnLabel = this.add.text(GAME_CONFIG.WIDTH - 122, 28, 'SOUND: ON', {
             fontSize: '13px', fontFamily: 'monospace', color: '#aaffaa', fontStyle: 'bold'
         }).setOrigin(0.5);
         soundBtnBg.on('pointerup', () => { this.setSoundEnabled(!(this.registry.get('sound') || {}).enabled); });
@@ -713,44 +708,13 @@ export class GameScene extends Phaser.Scene {
         });
         ui.add([this.healthBarBg, this.healthBarFill, this.healthText]);
 
-        // Rad bar
-        this.radBarBg = this.add.rectangle(380, 22, 120, 10, 0x222222, 1).setOrigin(0, 0.5);
-        this.radBarFill = this.add.rectangle(381, 22, 118, 8, 0x44ff44, 1).setOrigin(0, 0.5);
-        this.radText = this.add.text(506, 14, 'RAD 0', {
-            fontSize: '12px', fontFamily: 'monospace', color: '#88ff88'
-        });
-        ui.add([this.radBarBg, this.radBarFill, this.radText]);
-
-        // Score / kills - online keeps a compact kill counter (top-center);
-        // local modes show a BGMI-style live scoreboard with EVERY player's
-        // name + kills instead of just your own.
-        this.scoreText = this.add.text(GAME_CONFIG.WIDTH / 2, 14, 'KILLS: 0', {
-            fontSize: '18px', fontFamily: 'monospace', color: '#e0d0c0', fontStyle: 'bold',
-            backgroundColor: '#00000088'
-        }).setOrigin(0.5, 0);
-        ui.add(this.scoreText);
-
-        this.localBoardTitle = this.add.text(GAME_CONFIG.WIDTH / 2, 48, 'SCOREBOARD', {
-            fontSize: '11px', fontFamily: 'monospace', color: '#8a6a4a', fontStyle: 'bold',
-        }).setOrigin(0.5, 0);
-        ui.add(this.localBoardTitle);
-
-        this.localBoardRows = [];
-        for (let i = 0; i < this.players.length; i++) {
-            const row = this.add.text(GAME_CONFIG.WIDTH / 2, 62 + i * 24, '', {
-                fontSize: '16px', fontFamily: 'monospace', color: '#d8c8a8',
-                backgroundColor: '#00000066', padding: { x: 10, y: 4 },
-            }).setOrigin(0.5, 0);
-            this.localBoardRows.push(row);
-            ui.add(row);
-        }
-
-        const isLocal = this.gameMode !== 'online';
-        this.localBoardTitle.setVisible(isLocal);
-        for (const row of this.localBoardRows) row.setVisible(isLocal);
-        this.scoreText.setVisible(!isLocal);
-
-        if (isLocal) this.updateLocalKillText();
+        // Scoreboard (BGMI-TDM style): a compact horizontal list INSIDE the top
+        // bar showing EVERY player's name + kills. Works for practice/ffa (local
+        // player + bots) and online (all room members). Rebuilt by
+        // refreshScoreboard().
+        this.boardContainer = this.add.container(GAME_CONFIG.WIDTH / 2, 22);
+        ui.add(this.boardContainer);
+        this.refreshScoreboard();
 
         // Timer display (top-right area, below score)
         this.timerText = this.add.text(GAME_CONFIG.WIDTH - 14, 14, '', {
@@ -884,34 +848,59 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
-// Update the top-center scoreboard for non-online modes (practice/ffa),
-    // showing EVERY player's kills (BGMI TDM style), sorted with the leader on top
-    // and the human player highlighted.
-    updateLocalKillText() {
-        if (!this.localBoardRows || !this.localBoardRows.length) return;
-        const myName = (this.registry.get('playerName') || 'YOU').toUpperCase();
-        const rows = [];
-        for (let i = 0; i < this.players.length; i++) {
-            const p = this.players[i];
-            rows.push({
-                idx: i,
+// Top-bar scoreboard (BGMI-TDM style) for ALL modes: practice/ffa use the
+    // local player + bots, online uses the room's score list. Sorted by kills,
+    // the leader is gold and your row is highlighted.
+    refreshScoreboard() {
+        if (!this.boardContainer) return;
+        this.boardContainer.removeAll(true);
+
+        let entries = [];
+        if (this.gameMode === 'online') {
+            const me = this.net ? this.net.playerIndex : 0;
+            entries = (this.onlineScores || []).map((s) => ({
+                name: (s.playerIndex === me
+                    ? (this.registry.get('playerName') || 'YOU')
+                    : (s.name || `P${s.playerIndex + 1}`)).toUpperCase(),
+                kills: s.kills,
+                isYou: s.playerIndex === me,
+            }));
+        } else {
+            const myName = (this.registry.get('playerName') || 'YOU').toUpperCase();
+            entries = this.players.map((p, i) => ({
                 name: p.isBot ? `RAIDER ${p.playerId}` : myName,
                 kills: this.scores[i] || 0,
-            });
+                isYou: i === 0,
+            }));
         }
-        rows.sort((a, b) => b.kills - a.kills);
-        const leaderKills = rows[0] ? rows[0].kills : 0;
-        for (let r = 0; r < this.localBoardRows.length; r++) {
-            const row = this.localBoardRows[r];
-            if (r >= rows.length) { row.setText(''); continue; }
-            const entry = rows[r];
-            const isYou = entry.idx === 0;
-            const isLeader = entry.kills === leaderKills && leaderKills > 0;
-            const pad = entry.name.length > 12 ? 1 : 12 - entry.name.length;
-            row.setText(`${entry.name}${' '.repeat(Math.max(pad, 1))}${String(entry.kills).padStart(3, ' ')}${isLeader ? '  TOP FRAGGER' : ''}`);
-            row.setColor(isYou ? '#ffcc66' : (isLeader ? '#ffd700' : '#d8c8a8'));
-            row.setFontStyle(isYou ? 'bold' : 'normal');
+        if (!entries.length) return;
+
+        entries.sort((a, b) => (b.kills - a.kills) || (a.isYou ? -1 : 1));
+        const leaderKills = entries[0].kills;
+
+        let x = 0;
+        for (let e = 0; e < entries.length; e++) {
+            const en = entries[e];
+            const isLeader = en.kills === leaderKills && leaderKills > 0;
+            const seg = this.add.text(0, 0, `${en.name} ${en.kills}`, {
+                fontSize: '13px', fontFamily: 'monospace', fontStyle: en.isYou ? 'bold' : 'normal',
+                color: en.isYou ? '#ffcc66' : (isLeader ? '#ffd700' : '#d8c8a8'),
+            }).setOrigin(0, 0.5);
+            seg.x = x;
+            x += seg.width + 10;
+            this.boardContainer.add(seg);
+            if (e < entries.length - 1) {
+                const sep = this.add.text(x, 0, '|', {
+                    fontSize: '12px', fontFamily: 'monospace', color: '#6a5a4a',
+                }).setOrigin(0, 0.5);
+                this.boardContainer.add(sep);
+                x += sep.width + 10;
+            }
         }
+
+        // Center the whole board horizontally in the top bar.
+        this.boardContainer.x = GAME_CONFIG.WIDTH / 2 - this.boardContainer.width / 2;
+        this.boardContainer.y = 22;
     }
 
     update(time, delta) {
@@ -1075,9 +1064,6 @@ export class GameScene extends Phaser.Scene {
             const hpColor = hp > 50 ? 0x44cc44 : (hp > 25 ? 0xccaa44 : 0xcc4444);
             this.healthBarFill.setFillStyle(hpColor);
             this.healthText.setText(hp);
-
-            this.radBarFill.displayWidth = (Math.min(100, p.radExposure) / 100) * 118;
-            this.radText.setText('RAD ' + Math.ceil(p.radExposure));
 
             const ws = this.weapons[0];
             const mag = ws.mag[ws.currentWeapon];
