@@ -78,7 +78,7 @@ export class WeaponSystem {
         return true;
     }
 
-    fire(x, y, angle, time) {
+    fire(x, y, angle, time, shooter) {
         const cfg = this.config;
         if (!this.canFire(time)) return;
 
@@ -91,28 +91,40 @@ export class WeaponSystem {
         // Gunshot sound (procedural, tailored per weapon)
         if (this.audio) this.audio.shot(this.currentWeapon);
 
-        const bullet = this.projectiles.get(x, y, 'bullet');
+        // Spawn at the muzzle tip so the projectile visibly leaves the gun,
+        // and inherit the shooter's velocity so shots stay accurate while
+        // moving (running shots hit where you are aiming, not behind you).
+        const muzzle = 22;
+        const sx = x + Math.cos(finalAngle) * muzzle;
+        const sy = y + Math.sin(finalAngle) * muzzle;
+
+        let inheritX = 0;
+        let inheritY = 0;
+        if (shooter && shooter.sprite && shooter.sprite.body) {
+            inheritX = shooter.sprite.body.velocity.x * 0.5;
+            inheritY = shooter.sprite.body.velocity.y * 0.5;
+        }
+
+        const bullet = this.projectiles.get(sx, sy, 'bullet');
         if (bullet) {
             bullet.setActive(true).setVisible(true);
             bullet.body.enable = true;
             bullet.setTint(cfg.color);
             bullet.setScale(cfg.explosive ? 1.5 : 1);
 
-            const vx = Math.cos(finalAngle) * cfg.bulletSpeed;
-            const vy = Math.sin(finalAngle) * cfg.bulletSpeed;
+            const vx = Math.cos(finalAngle) * cfg.bulletSpeed + inheritX;
+            const vy = Math.sin(finalAngle) * cfg.bulletSpeed + inheritY;
             bullet.body.setVelocity(vx, vy);
             bullet.setRotation(finalAngle);
             bullet.damage = cfg.damage;
             bullet.explosive = cfg.explosive || false;
             bullet.explosionRadius = cfg.explosionRadius || 0;
 
+            // Explosive projectiles (Pipe Bomb) DO NOT auto-detonate when their
+            // lifetime expires - they only explode on contact with a surface,
+            // another player, or a thrown wall hit. So just despawn silently.
             this.scene.time.delayedCall(cfg.bulletLifetime, () => {
-                if (bullet.active) {
-                    if (bullet.explosive) {
-                        this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
-                    }
-                    this.deactivateBullet(bullet);
-                }
+                if (bullet.active) this.deactivateBullet(bullet);
             });
         }
 
@@ -132,7 +144,13 @@ export class WeaponSystem {
         const spread = (Math.random() - 0.5) * cfg.spread * 2;
         const finalAngle = angle + spread;
 
-        const bullet = this.remoteProjectiles.get(x, y, 'bullet');
+        // Match the local fire() muzzle offset so remote shots line up with
+        // the opponent's gun sprite.
+        const muzzle = 22;
+        const sx = x + Math.cos(finalAngle) * muzzle;
+        const sy = y + Math.sin(finalAngle) * muzzle;
+
+        const bullet = this.remoteProjectiles.get(sx, sy, 'bullet');
         if (bullet) {
             bullet.setActive(true).setVisible(true);
             bullet.body.enable = true;
@@ -148,13 +166,10 @@ export class WeaponSystem {
             bullet.explosionRadius = cfg.explosionRadius || 0;
             bullet.weaponKey = weaponKey;
 
+            // No auto-detonation on lifetime expiry - bombs only explode on
+            // impact with a surface or player.
             this.scene.time.delayedCall(cfg.bulletLifetime, () => {
-                if (bullet.active) {
-                    if (bullet.explosive) {
-                        this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
-                    }
-                    this.deactivateBullet(bullet, true);
-                }
+                if (bullet.active) this.deactivateBullet(bullet, true);
             });
         }
         return bullet;

@@ -426,17 +426,35 @@ export class GameScene extends Phaser.Scene {
             if (iWon) audio.win(); else audio.lose();
         }
 
-        const titleText = this.add.text(GAME_CONFIG.WIDTH / 2, 100,
-            iWon ? 'YOU WIN!' : 'MATCH OVER', {
-                fontSize: '48px', fontFamily: 'monospace', color: iWon ? '#44ff44' : '#ff4444',
+        const titleText = this.add.text(GAME_CONFIG.WIDTH / 2, 90,
+            iWon ? 'YOU WIN!' : (winnerId ? 'YOU LOSE' : 'MATCH OVER'), {
+                fontSize: iWon ? '52px' : '46px', fontFamily: 'monospace',
+                color: iWon ? '#44ff44' : (winnerId ? '#ff4444' : '#ffcc44'),
                 fontStyle: 'bold', backgroundColor: '#00000088',
             }).setOrigin(0.5).setDepth(201);
 
-        // Rankings list
-        let y = 170;
-        if (rankings && rankings.length) {
+        // Build the ranked list. If the server payload is empty, fall back to
+        // the scoreboard we already have so the screen NEVER shows only the
+        // "tap to return" hint.
+        let list = (rankings && rankings.length) ? rankings.slice() : [];
+        if (!list.length && this.onlineScores && this.onlineScores.length) {
+            list = this.onlineScores.slice()
+                .sort((a, b) => b.kills - a.kills)
+                .map((s, i) => ({
+                    rank: i + 1,
+                    id: s.id,
+                    name: s.name || `P${(s.playerIndex || 0) + 1}`,
+                    playerIndex: s.playerIndex,
+                    kills: s.kills,
+                    isWinner: i === 0,
+                }));
+        }
+
+        // Rankings list with numbering, winner/loser marking.
+        let y = 160;
+        if (list.length) {
             const rankColors = ['#ffd700', '#c0c0c0', '#cd7f32', '#e0d0c0', '#e0d0c0', '#e0d0c0'];
-            for (const r of rankings) {
+            for (const r of list) {
                 const color = rankColors[(r.rank - 1)] || '#e0d0c0';
                 const rankPrefix = r.rank === 1 ? '[WINNER] ' : '';
                 const nameStr = r.name || `P${(r.playerIndex || 0) + 1}`;
@@ -448,27 +466,56 @@ export class GameScene extends Phaser.Scene {
                         fontFamily: 'monospace',
                         color: r.rank === 1 ? '#ffd700' : color,
                         fontStyle: r.rank === 1 ? 'bold' : 'normal',
+                        backgroundColor: '#00000000',
                     }).setOrigin(0.5).setDepth(201);
                 y += 36;
             }
+        } else {
+            this.add.text(GAME_CONFIG.WIDTH / 2, y, 'NO SCORES YET - MATCH ENDED', {
+                fontSize: '18px', fontFamily: 'monospace', color: '#cccccc',
+            }).setOrigin(0.5).setDepth(201);
         }
 
-        // Tap to return
-        this.add.text(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT - 60,
-            'TAP TO RETURN TO MENU', {
-                fontSize: '20px', fontFamily: 'monospace', color: '#cccccc',
-            }).setOrigin(0.5).setDepth(201);
-
-        overlay.setInteractive({ useHandCursor: true });
-        overlay.once('pointerdown', () => this.scene.start('MenuScene'));
-        titleText.setInteractive({ useHandCursor: true });
-        titleText.once('pointerdown', () => this.scene.start('MenuScene'));
+        // Buttons: Play Again + Main Menu.
+        this.createEndButton(GAME_CONFIG.WIDTH / 2 - 170, GAME_CONFIG.HEIGHT - 70, 'PLAY AGAIN', () => this.playAgain());
+        this.createEndButton(GAME_CONFIG.WIDTH / 2 + 170, GAME_CONFIG.HEIGHT - 70, 'MAIN MENU', () => this.scene.start('MenuScene'));
 
         this.time.delayedCall(400, () => {
             if (this.cursors && this.cursors.esc) {
                 this.cursors.esc.once('down', () => this.scene.start('MenuScene'));
             }
         });
+    }
+
+    createEndButton(x, y, text, callback) {
+        const bg = this.add.rectangle(x, y, 300, 46, 0x3d2b1f, 1)
+            .setStrokeStyle(2, 0xccaa44)
+            .setInteractive({ useHandCursor: true })
+            .setDepth(202);
+        const label = this.add.text(x, y, text, {
+            fontSize: '20px', fontFamily: 'monospace', color: '#e0d0c0',
+            padding: { x: 10, y: 6 },
+        }).setOrigin(0.5).setDepth(203);
+        bg.on('pointerover', () => { bg.setFillStyle(0x5c4033, 1); label.setColor('#ffffff'); });
+        bg.on('pointerout', () => { bg.setFillStyle(0x3d2b1f, 1); label.setColor('#e0d0c0'); });
+        bg.on('pointerup', () => {
+            const a = this.registry.get('sound');
+            if (a) a.click();
+            callback();
+        });
+        return { bg, label };
+    }
+
+    playAgain() {
+        // Online: the old room is finished, go to the lobby to join/start a
+        // fresh match. Local modes: instantly restart the same mode.
+        if (this.gameMode === 'online') {
+            if (this.net) this.net.disconnect();
+            this.registry.set('netClient', null);
+            this.scene.start('LobbyScene');
+        } else {
+            this.scene.start('GameScene', { mode: this.gameMode });
+        }
     }
 
     showWinScreen(winnerId) {
@@ -831,7 +878,7 @@ export class GameScene extends Phaser.Scene {
                 player.update(null, null, time);
                 if (player.isAlive && player.shouldShoot(time)) {
                     const angle = player.getShootAngle();
-                    const recoil = this.weapons[i].fire(player.sprite.x, player.sprite.y - 8, angle, time);
+                    const recoil = this.weapons[i].fire(player.sprite.x, player.sprite.y - 8, angle, time, player);
                     if (recoil && player.sprite.body) {
                         player.sprite.body.setVelocityX(player.sprite.body.velocity.x + recoil);
                     }
@@ -890,7 +937,7 @@ export class GameScene extends Phaser.Scene {
                     );
                     player.facingRight = angle > -Math.PI / 2 && angle < Math.PI / 2;
                     player.sprite.setFlipX(!player.facingRight);
-                    const recoil = this.weapons[0].fire(player.sprite.x, player.sprite.y - 8, angle, time);
+                    const recoil = this.weapons[0].fire(player.sprite.x, player.sprite.y - 8, angle, time, player);
                     if (recoil && player.sprite.body) {
                         player.sprite.body.setVelocityX(player.sprite.body.velocity.x + recoil);
                     }
@@ -915,12 +962,30 @@ export class GameScene extends Phaser.Scene {
             const ws = this.weapons[i];
             ws.projectiles.children.each((bullet) => {
                 if (!bullet.active) return;
+                // Tunneling-safe check: measure the distance from the segment
+                // the bullet travelled this frame (prev -> current) to the
+                // target, so very fast pellets don't skip past a player.
+                const havBody = bullet.body && bullet.body.prev;
+                const ax = havBody ? bullet.body.prev.x : bullet.x;
+                const ay = havBody ? bullet.body.prev.y : bullet.y;
+                const dx = bullet.x - ax;
+                const dy = bullet.y - ay;
+                const len2 = dx * dx + dy * dy;
                 for (let j = 0; j < this.players.length; j++) {
                     if (j === i) continue;
                     const p = this.players[j];
                     if (!p.isAlive) continue;
-                    const dist = Phaser.Math.Distance.Between(bullet.x, bullet.y, p.sprite.x, p.sprite.y - 8);
-                    if (dist < 22) {
+                    const px = p.sprite.x;
+                    const py = p.sprite.y - 8;
+                    let t = 0;
+                    if (len2 > 0) {
+                        t = Phaser.Math.Clamp(((px - ax) * dx + (py - ay) * dy) / len2, 0, 1);
+                    }
+                    const cx = ax + t * dx;
+                    const cy = ay + t * dy;
+                    const ex = px - cx;
+                    const ey = py - cy;
+                    if ((ex * ex + ey * ey) < 22 * 22) {
                         if (bullet.explosive) {
                             ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
                         } else {
@@ -1031,8 +1096,9 @@ export class GameScene extends Phaser.Scene {
             }
         }
 
-        // ESC to menu
-        if (Phaser.Input.Keyboard.JustDown(this.cursors.esc)) {
+        // ESC to menu (ignored while the match-end rankings screen is up -
+        // the overlay's own ESC handler + explicit buttons take over)
+        if (!this.matchOver && Phaser.Input.Keyboard.JustDown(this.cursors.esc)) {
             this.scene.start('MenuScene');
         }
     }
