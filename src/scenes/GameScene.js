@@ -38,7 +38,9 @@ export class GameScene extends Phaser.Scene {
         // Players
         this.players = [];
         this.weapons = [];
+        this.scores = {}; // kills per playerId (practice/ffa local scoreboard)
         this.createPlayers();
+        for (const p of this.players) this.scores[p.playerId] = 0;
 
         // --- COLLIDERS ---
         for (const player of this.players) {
@@ -51,16 +53,17 @@ export class GameScene extends Phaser.Scene {
             }
         }
 
-        for (const ws of this.weapons) {
+        for (let wi = 0; wi < this.weapons.length; wi++) {
+            const ws = this.weapons[wi];
             this.physics.add.collider(ws.projectiles, this.platforms, (bullet) => {
                 if (bullet.explosive) {
-                    ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
+                    ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, wi);
                 }
                 ws.deactivateBullet(bullet);
             });
             this.physics.add.collider(ws.projectiles, this.solidObstacles, (bullet) => {
                 if (bullet.explosive) {
-                    ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
+                    ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, wi);
                 }
                 ws.deactivateBullet(bullet);
             });
@@ -139,18 +142,17 @@ export class GameScene extends Phaser.Scene {
         this.events.on('playerDied', (player, cause) => {
             if (this.gameMode !== 'online') {
                 this.showKillFeed(player, cause);
-                // Track kills locally for practice/ffa modes. Ask the weapon system
-                // who fired the killing bullet; bots only kill the human, so if a bot
-                // died by combat it was the human's kill.
-                if (player.isBot && cause === 'combat') {
-                    this.scores[0] = (this.scores[0] || 0) + 1;
+                // Credit the actual shooter when known (tracked via lastHitFrom
+                // when a bullet/explosion lands). Falls back to the human player
+                // so a bot death from any combat counts as a human kill.
+                if (cause === 'combat') {
+                    const killerIdx = player.lastHitFrom !== undefined ? player.lastHitFrom : 0;
+                    this.scores[killerIdx] = (this.scores[killerIdx] || 0) + 1;
                     this.updateLocalKillText();
                 }
             }
         });
 
-        this.scores = {};
-        for (const p of this.players) this.scores[p.playerId] = 0;
         this.gameTime = 0;
 
         // Online mode time tracking
@@ -719,12 +721,36 @@ export class GameScene extends Phaser.Scene {
         });
         ui.add([this.radBarBg, this.radBarFill, this.radText]);
 
-        // Score / kills (top-center) - NOW ACTUALLY UPDATED
+        // Score / kills - online keeps a compact kill counter (top-center);
+        // local modes show a BGMI-style live scoreboard with EVERY player's
+        // name + kills instead of just your own.
         this.scoreText = this.add.text(GAME_CONFIG.WIDTH / 2, 14, 'KILLS: 0', {
             fontSize: '18px', fontFamily: 'monospace', color: '#e0d0c0', fontStyle: 'bold',
             backgroundColor: '#00000088'
         }).setOrigin(0.5, 0);
         ui.add(this.scoreText);
+
+        this.localBoardTitle = this.add.text(GAME_CONFIG.WIDTH / 2, 48, 'SCOREBOARD', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#8a6a4a', fontStyle: 'bold',
+        }).setOrigin(0.5, 0);
+        ui.add(this.localBoardTitle);
+
+        this.localBoardRows = [];
+        for (let i = 0; i < this.players.length; i++) {
+            const row = this.add.text(GAME_CONFIG.WIDTH / 2, 62 + i * 24, '', {
+                fontSize: '16px', fontFamily: 'monospace', color: '#d8c8a8',
+                backgroundColor: '#00000066', padding: { x: 10, y: 4 },
+            }).setOrigin(0.5, 0);
+            this.localBoardRows.push(row);
+            ui.add(row);
+        }
+
+        const isLocal = this.gameMode !== 'online';
+        this.localBoardTitle.setVisible(isLocal);
+        for (const row of this.localBoardRows) row.setVisible(isLocal);
+        this.scoreText.setVisible(!isLocal);
+
+        if (isLocal) this.updateLocalKillText();
 
         // Timer display (top-right area, below score)
         this.timerText = this.add.text(GAME_CONFIG.WIDTH - 14, 14, '', {
@@ -858,11 +884,33 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
-    // Update the top-center score text for non-online modes (practice/ffa),
-    // where kills are tracked locally.
+// Update the top-center scoreboard for non-online modes (practice/ffa),
+    // showing EVERY player's kills (BGMI TDM style), sorted with the leader on top
+    // and the human player highlighted.
     updateLocalKillText() {
-        if (this.scoreText) {
-            this.scoreText.setText(`KILLS: ${this.scores[0] || 0}`);
+        if (!this.localBoardRows || !this.localBoardRows.length) return;
+        const myName = (this.registry.get('playerName') || 'YOU').toUpperCase();
+        const rows = [];
+        for (let i = 0; i < this.players.length; i++) {
+            const p = this.players[i];
+            rows.push({
+                idx: i,
+                name: p.isBot ? `RAIDER ${p.playerId}` : myName,
+                kills: this.scores[i] || 0,
+            });
+        }
+        rows.sort((a, b) => b.kills - a.kills);
+        const leaderKills = rows[0] ? rows[0].kills : 0;
+        for (let r = 0; r < this.localBoardRows.length; r++) {
+            const row = this.localBoardRows[r];
+            if (r >= rows.length) { row.setText(''); continue; }
+            const entry = rows[r];
+            const isYou = entry.idx === 0;
+            const isLeader = entry.kills === leaderKills && leaderKills > 0;
+            const pad = entry.name.length > 12 ? 1 : 12 - entry.name.length;
+            row.setText(`${entry.name}${' '.repeat(Math.max(pad, 1))}${String(entry.kills).padStart(3, ' ')}${isLeader ? '  TOP FRAGGER' : ''}`);
+            row.setColor(isYou ? '#ffcc66' : (isLeader ? '#ffd700' : '#d8c8a8'));
+            row.setFontStyle(isYou ? 'bold' : 'normal');
         }
     }
 
@@ -986,8 +1034,9 @@ export class GameScene extends Phaser.Scene {
                     const ex = px - cx;
                     const ey = py - cy;
                     if ((ex * ex + ey * ey) < 22 * 22) {
+                        p.lastHitFrom = i;
                         if (bullet.explosive) {
-                            ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
+                            ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, i);
                         } else {
                             p.takeDamage(bullet.damage);
                         }

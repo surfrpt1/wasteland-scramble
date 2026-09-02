@@ -175,7 +175,7 @@ export class WeaponSystem {
         return bullet;
     }
 
-    createExplosion(x, y, radius, damage) {
+    createExplosion(x, y, radius, damage, sourceIdx) {
         // Explosion sound
         if (this.audio) this.audio.explosion();
 
@@ -199,6 +199,7 @@ export class WeaponSystem {
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist < radius) {
                 const falloff = 1 - (dist / radius);
+                if (sourceIdx !== undefined) player.lastHitFrom = sourceIdx;
                 player.takeDamage(damage * falloff);
             }
         }
