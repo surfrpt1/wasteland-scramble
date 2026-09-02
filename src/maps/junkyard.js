@@ -97,7 +97,7 @@ export const JUNKYARD_MAP = {
         { x: 74 * T, type: 'health' },
     ],
     // Random pickup spawn spots: each is a world x; a random subset is active
-    // at spawn. Types alternate between health kits and jetpack boosts.
+    // at spawn. A mix of health kits and weapon crates is placed there.
     randomSpawns: [
         8 * T, 12 * T, 18 * T, 20 * T, 28 * T, 32 * T, 36 * T, 42 * T,
         46 * T, 52 * T, 56 * T, 60 * T, 64 * T, 70 * T, 72 * T, 76 * T,
@@ -113,7 +113,6 @@ const TEXTURE_HALF_HEIGHTS = {
     grass_tuft: 9,
     health_pack: 9,
     weapon_pickup: 7,
-    boost_pickup: 11,
 };
 
 export function buildMap(scene, mapData) {
@@ -222,20 +221,22 @@ export function buildPickups(scene, mapData) {
         bob(pickup, py);
     }
 
-    // Random health + boost pickups: pick a shuffled subset of the spawn spots,
-    // then alternate health kits and jetpack boost pickups across them.
+    // Random health + weapon pickups: pick a shuffled subset of the spawn spots,
+    // then alternate health kits and weapon crates across them for variety.
     if (mapData.randomSpawns && mapData.randomSpawns.length) {
         const spots = mapData.randomSpawns.slice().sort(() => Math.random() - 0.5);
         const count = Math.min(spots.length, 8);
+        const weaponPool = ['SCRAP_RIFLE', 'NAIL_GUN', 'PIPE_BOMB', 'ACID_SPRAYER'];
         for (let i = 0; i < count; i++) {
             const x = spots[i];
-            const type = i % 2 === 0 ? 'health' : 'boost';
-            const tex = type === 'health' ? 'health_pack' : 'boost_pickup';
+            const weapon = i % 2 === 1;
+            const singleWeapon = weaponPool[Math.floor(Math.random() * weaponPool.length)];
+            const tex = weapon ? 'weapon_pickup' : 'health_pack';
             const halfH = TEXTURE_HALF_HEIGHTS[tex] || 7;
             const py = surfaceTopAt(mapData, x) - halfH;
             const pickup = pickups.create(x, py, tex);
-            pickup.pickupType = type;
-            pickup.weapon = null;
+            pickup.pickupType = weapon ? 'weapon' : 'health';
+            pickup.weapon = weapon ? singleWeapon : null;
             pickup.refreshBody();
             bob(pickup, py);
         }

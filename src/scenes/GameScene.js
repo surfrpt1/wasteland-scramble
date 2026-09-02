@@ -8,6 +8,33 @@ import { TouchControls } from '../entities/TouchControls.js';
 import { NetClient } from '../net/NetClient.js';
 import { JUNKYARD_MAP, buildMap, buildRadZones, buildPickups, buildDecor } from '../maps/junkyard.js';
 
+// True if the segment (ax,ay)-(bx,by) intersects the axis-aligned rect (rx,ry,rw,rh).
+// Uses Liang-Barsky clipping; used for deterministic bullet-surface contact so a
+// Pipe Bomb explodes exactly at the point it touches a solid surface.
+function segRect(ax, ay, bx, by, rx, ry, rw, rh) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    let t0 = 0;
+    let t1 = 1;
+    const p = [-dx, dx, -dy, dy];
+    const q = [ax - rx, rx + rw - ax, ay - ry, ry + rh - ay];
+    for (let i = 0; i < 4; i++) {
+        if (p[i] === 0) {
+            if (q[i] < 0) return false;
+        } else {
+            const r = q[i] / p[i];
+            if (p[i] < 0) {
+                if (r > t1) return false;
+                if (r > t0) t0 = r;
+            } else {
+                if (r < t0) return false;
+                if (r < t1) t1 = r;
+            }
+        }
+    }
+    return t0 <= t1;
+}
+
 export class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
@@ -54,39 +81,18 @@ export class GameScene extends Phaser.Scene {
             }
         }
 
-        for (let wi = 0; wi < this.weapons.length; wi++) {
-            const ws = this.weapons[wi];
-            this.physics.add.collider(ws.projectiles, this.platforms, (bullet) => {
-                if (bullet.explosive) {
-                    ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, wi);
+        // Solid bounding rects (platforms + obstacles) used for the manual,
+        // deterministic bullet-surface contact check (see resolveBulletContacts).
+        // Projectiles do NOT collide via arcade physics - they are resolved
+        // manually each frame so a bomb explodes exactly where it visibly lands,
+        // only on contact with a player or solid surface (never in mid-air and
+        // never displaced by a bouncy arcade collider).
+        this.solidRects = [];
+        for (const g of [this.platforms, this.solidObstacles]) {
+            g.getChildren().forEach((tile) => {
+                if (tile && tile.body) {
+                    this.solidRects.push({ x: tile.body.x, y: tile.body.y, w: tile.body.width, h: tile.body.height });
                 }
-                ws.deactivateBullet(bullet);
-            });
-            this.physics.add.collider(ws.projectiles, this.solidObstacles, (bullet) => {
-                if (bullet.explosive) {
-                    ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, wi);
-                }
-                ws.deactivateBullet(bullet);
-            });
-        }
-
-        if (this.gameMode === 'online') {
-            const ws0 = this.weapons[0];
-            this.physics.add.collider(ws0.remoteProjectiles, this.platforms, (bullet) => {
-                if (bullet.explosive) {
-                    ws0.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
-                }
-                ws0.deactivateBullet(bullet);
-            });
-            this.physics.add.collider(ws0.remoteProjectiles, this.solidObstacles, (bullet) => {
-                if (bullet.explosive) {
-                    ws0.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage);
-                }
-                ws0.deactivateBullet(bullet);
-            });
-            this.physics.add.overlap(ws0.remoteProjectiles, this.players[0].sprite, (bullet) => {
-                if (!bullet.active) return;
-                ws0.deactivateBullet(bullet);
             });
         }
 
@@ -855,18 +861,15 @@ export class GameScene extends Phaser.Scene {
         if (audio) audio.pickup();
         if (pickup.pickupType === 'health') {
             player.health = Math.min(player.health + 30, PLAYER_CONFIG.MAX_HEALTH);
-        } else if (pickup.pickupType === 'boost' && player.activateBoost) {
-            player.activateBoost(6000); // 6 seconds of jetpack flight
-            if (this.killFeed) this.showKillFeedText('BOOST! JETPACK: 6s');
         } else if (pickup.pickupType === 'weapon' && pickup.weapon) {
             this.selectWeapon(pickup.weapon);
             this.weapons[0].addAmmo(pickup.weapon, WEAPON_CONFIG[pickup.weapon].ammo);
         }
         pickup.body.enable = false;
         pickup.setAlpha(0);
-        // Health/heal respawns faster; weapon/boost slightly slower, with a
-        // little randomness so spawned items don't all come back together.
-        const base = pickup.pickupType === 'weapon' || pickup.pickupType === 'boost' ? 18000 : 12000;
+        // Weapons take a little longer to respawn; add randomness so spawned
+        // items don't all come back together.
+        const base = pickup.pickupType === 'weapon' ? 18000 : 12000;
         const respawn = base + Math.floor(Math.random() * 5000);
         this.time.delayedCall(respawn, () => {
             if (pickup && pickup.scene) { pickup.body.enable = true; pickup.setAlpha(1); }
@@ -1048,46 +1051,80 @@ export class GameScene extends Phaser.Scene {
 
         this.touchControls.consumePressed();
 
-        // --- BULLET HITS PLAYERS ---
+        // --- BULLET CONTACTS (surface + players) ---
+        // All projectiles are resolved manually here (no Arcade colliders) so a
+        // bomb's explosion happens EXACTLY where the bomb is, and only when it
+        // touches a solid surface or a player - never in free air and never
+        // displaced by a bouncing physics body.
+        const resolveBullet = (ws, bullet, ownerIdx) => {
+            if (!bullet.active) return;
+            const havBody = bullet.body && bullet.body.prev;
+            const ax = havBody ? bullet.body.prev.x : bullet.x;
+            const ay = havBody ? bullet.body.prev.y : bullet.y;
+            const bx = bullet.x;
+            const by = bullet.y;
+            const dx = bx - ax;
+            const dy = by - ay;
+
+            // 1) Player contact (tunneling-safe distance to travelled segment).
+            //    For a local bullet (ownerIdx set) any other alive player; for a
+            //    remote bullet (ownerIdx null) only the local player is simulated
+            //    on this client.
+            let hitPlayer = null;
+            const playerCount = ownerIdx === null ? 1 : this.players.length;
+            for (let j = 0; j < playerCount; j++) {
+                if (ownerIdx !== null && j === ownerIdx) continue;
+                const p = this.players[j];
+                if (!p.isAlive) continue;
+                const px = p.sprite.x;
+                const py = p.sprite.y - 8;
+                let t = 0;
+                const len2 = dx * dx + dy * dy;
+                if (len2 > 0) {
+                    t = Phaser.Math.Clamp(((px - ax) * dx + (py - ay) * dy) / len2, 0, 1);
+                }
+                const cx = ax + t * dx;
+                const cy = ay + t * dy;
+                const ex = px - cx;
+                const ey = py - cy;
+                if (ex * ex + ey * ey < 22 * 22) { hitPlayer = p; break; }
+            }
+
+            // 2) Surface contact (segment vs solid rect). Bomb explodes at the
+            //    contact point; normal bullets stop so they don't fly through.
+            let hitSurface = false;
+            if (dx !== 0 || dy !== 0) {
+                for (const r of this.solidRects) {
+                    if (segRect(ax, ay, bx, by, r.x, r.y, r.w, r.h)) { hitSurface = true; break; }
+                }
+            }
+
+            if (hitPlayer) {
+                if (ownerIdx !== null) hitPlayer.lastHitFrom = ownerIdx;
+                if (bullet.explosive) {
+                    ws.createExplosion(bx, by, bullet.explosionRadius, bullet.damage, ownerIdx);
+                } else {
+                    hitPlayer.takeDamage(bullet.damage);
+                }
+                ws.deactivateBullet(bullet);
+            } else if (hitSurface) {
+                if (bullet.explosive) {
+                    ws.createExplosion(bx, by, bullet.explosionRadius, bullet.damage, ownerIdx);
+                }
+                ws.deactivateBullet(bullet);
+            } else if (bx < 0 || bx > this.mapData.width * 32 || by < 0 || by > this.mapData.height * 32) {
+                // Left the map bounds - despawn without exploding.
+                ws.deactivateBullet(bullet);
+            }
+        };
+
         for (let i = 0; i < this.weapons.length; i++) {
             const ws = this.weapons[i];
-            ws.projectiles.children.each((bullet) => {
-                if (!bullet.active) return;
-                // Tunneling-safe check: measure the distance from the segment
-                // the bullet travelled this frame (prev -> current) to the
-                // target, so very fast pellets don't skip past a player.
-                const havBody = bullet.body && bullet.body.prev;
-                const ax = havBody ? bullet.body.prev.x : bullet.x;
-                const ay = havBody ? bullet.body.prev.y : bullet.y;
-                const dx = bullet.x - ax;
-                const dy = bullet.y - ay;
-                const len2 = dx * dx + dy * dy;
-                for (let j = 0; j < this.players.length; j++) {
-                    if (j === i) continue;
-                    const p = this.players[j];
-                    if (!p.isAlive) continue;
-                    const px = p.sprite.x;
-                    const py = p.sprite.y - 8;
-                    let t = 0;
-                    if (len2 > 0) {
-                        t = Phaser.Math.Clamp(((px - ax) * dx + (py - ay) * dy) / len2, 0, 1);
-                    }
-                    const cx = ax + t * dx;
-                    const cy = ay + t * dy;
-                    const ex = px - cx;
-                    const ey = py - cy;
-                    if ((ex * ex + ey * ey) < 22 * 22) {
-                        p.lastHitFrom = i;
-                        if (bullet.explosive) {
-                            ws.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, i);
-                        } else {
-                            p.takeDamage(bullet.damage);
-                        }
-                        ws.deactivateBullet(bullet);
-                        break;
-                    }
-                }
-            });
+            ws.projectiles.children.each((bullet) => resolveBullet(ws, bullet, i));
+            if (this.gameMode === 'online') {
+                // Remote bullets are simulated only against the local player (0).
+                ws.remoteProjectiles.children.each((bullet) => resolveBullet(ws, bullet, null));
+            }
         }
 
         // --- RAD DECAY ---
