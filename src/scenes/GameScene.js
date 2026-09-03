@@ -603,7 +603,7 @@ export class GameScene extends Phaser.Scene {
         const GROUND_TOP = 28 * 32;
 
         const sky = this.add.graphics().setScrollFactor(0).setDepth(-1);
-        const skyColors = [0x3a1a12, 0x5a2412, 0x7a3214, 0x94401a, 0xb04a18];
+        const skyColors = [0x3a1a12, 0x5a2412, 0x7a3214, 0x94401a, 0xb04a18, 0xca5420];
         const bandH = GAME_CONFIG.HEIGHT / skyColors.length;
         for (let i = 0; i < skyColors.length; i++) {
             sky.fillStyle(skyColors[i], 1);
@@ -614,6 +614,17 @@ export class GameScene extends Phaser.Scene {
 
         const sunX = GAME_CONFIG.WIDTH - 220;
         const sunY = 120;
+
+        // Horizonglow bleeding out from the sun and the horizon line for a
+        // warmer, more atmospheric wasteland sky.
+        const glow = this.add.graphics().setScrollFactor(0).setDepth(-1);
+        glow.fillStyle(0xff8844, 0.05);
+        glow.fillCircle(sunX, sunY, 190);
+        glow.fillStyle(0xffaa55, 0.10);
+        glow.fillCircle(sunX, sunY, 150);
+        glow.fillStyle(0xff6622, 0.08);
+        glow.fillRect(0, GROUND_TOP - 120, GAME_CONFIG.WIDTH, 160);
+
         const sun = this.add.image(sunX, sunY, this.genSunTexture()).setScrollFactor(0).setDepth(-1);
         sun.setScale(1);
 
@@ -624,7 +635,7 @@ export class GameScene extends Phaser.Scene {
             .setOrigin(0.5, 1).setScrollFactor(0).setDepth(0).setAlpha(0.85);
 
         this.clouds = [];
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 8; i++) {
             const c = this.add.image(
                 Math.random() * GAME_CONFIG.WIDTH,
                 40 + Math.random() * 180,
@@ -643,6 +654,19 @@ export class GameScene extends Phaser.Scene {
             const rx = Math.random() * w;
             bg.fillStyle([0x2a1608, 0x1f0f06, 0x33200e][Math.floor(Math.random() * 3)], 0.5);
             bg.fillRect(rx, GROUND_TOP + Math.random() * 30, 30 + Math.random() * 90, 4 + Math.random() * 8);
+        }
+
+        // Ambient wind-blown ash / ember particles drifting across the sky for
+        // a more alive, post-apocalyptic atmosphere.
+        this.ash = [];
+        for (let i = 0; i < 26; i++) {
+            const a = this.add.circle(
+                Math.random() * GAME_CONFIG.WIDTH,
+                Math.random() * GAME_CONFIG.HEIGHT,
+                1 + Math.random() * 1.5,
+                0xffb060
+            ).setScrollFactor(0).setDepth(1).setAlpha(0.25 + Math.random() * 0.45);
+            this.ash.push({ img: a, speed: 20 + Math.random() * 50, drift: (Math.random() - 0.5) * 30, phase: Math.random() * Math.PI * 2 });
         }
     }
 
@@ -720,6 +744,17 @@ export class GameScene extends Phaser.Scene {
             for (const c of this.clouds) {
                 c.img.x += c.speed * 0.016;
                 if (c.img.x > GAME_CONFIG.WIDTH + 80) c.img.x = -80;
+            }
+        }
+        if (this.ash) {
+            const dt = 0.016;
+            for (const a of this.ash) {
+                a.img.x += a.speed * dt;
+                a.img.y += a.drift * dt + Math.sin(a.phase) * 0.4;
+                a.phase += 0.05;
+                if (a.img.x > GAME_CONFIG.WIDTH + 10) a.img.x = -10;
+                if (a.img.y < -10) a.img.y = GAME_CONFIG.HEIGHT + 10;
+                if (a.img.y > GAME_CONFIG.HEIGHT + 10) a.img.y = -10;
             }
         }
     }
