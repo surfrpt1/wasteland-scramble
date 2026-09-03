@@ -23,6 +23,7 @@ const HIT_RADIUS = 22;           // distance for a bullet to "hit" a player
 const PLAYER_RADIUS = 16;        // player-vs-player separation radius
 const MAX_SPEED = 600;           // sanity cap on reported position delta/tick
 const MAX_RANGE = 1000;          // max bullet travel we'll honour for a weapon
+const PROJECTILE_GRAVITY = 800;  // px/s^2, matches client GAME_CONFIG.GRAVITY (arcade) for explosive bombs
 const WORLD_W = 80 * 32;         // map width in px
 const WORLD_H = 30 * 32;         // map height in px
 const COUNTDOWN_SECONDS = 5;     // countdown before game starts
@@ -531,6 +532,7 @@ setInterval(() => {
             // it was spawned overlapping (no instant point-blank bomb kills).
             if (b.skip && b.skip > 0) {
                 b.skip--;
+                if (b.weapon.explosive) b.vy += PROJECTILE_GRAVITY * dt;
                 b.x += b.vx * dt;
                 b.y += b.vy * dt;
                 activeBullets.push(b);
@@ -538,6 +540,12 @@ setInterval(() => {
             }
 
             const px = b.x, py = b.y;
+            // Apply gravity ONLY to explosives (Pipe Bomb) so the server arc
+            // matches the client's Arcade gravity. Without this the server bomb
+            // flies in a straight line and can life-expire high in the air,
+            // disappearing without ever touching a surface (client-vs-server
+            // ballistic mismatch). Non-explosive bullets stay straight.
+            if (b.weapon.explosive) b.vy += PROJECTILE_GRAVITY * dt;
             b.x += b.vx * dt;
             b.y += b.vy * dt;
             const nx = b.x, ny = b.y;

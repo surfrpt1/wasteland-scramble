@@ -629,10 +629,12 @@ export class GameScene extends Phaser.Scene {
         sun.setScale(1);
 
         this.groundWorldY = GROUND_TOP;
-        this.farLayer = this.add.tileSprite(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT, GAME_CONFIG.WIDTH, 460, this.genSkylineTexture('far'))
-            .setOrigin(0.5, 1).setScrollFactor(0).setDepth(0).setAlpha(0.9);
-        this.nearLayer = this.add.tileSprite(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT, GAME_CONFIG.WIDTH, 290, this.genSkylineTexture('near'))
-            .setOrigin(0.5, 1).setScrollFactor(0).setDepth(0).setAlpha(0.85);
+        // Skyline buildings are a subtle background scrim, not solid black walls
+        // that obscure gameplay platforms - keep them short, low, and translucent.
+        this.farLayer = this.add.tileSprite(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT, GAME_CONFIG.WIDTH, 240, this.genSkylineTexture('far'))
+            .setOrigin(0.5, 1).setScrollFactor(0).setDepth(0).setAlpha(0.30);
+        this.nearLayer = this.add.tileSprite(GAME_CONFIG.WIDTH / 2, GAME_CONFIG.HEIGHT, GAME_CONFIG.WIDTH, 130, this.genSkylineTexture('near'))
+            .setOrigin(0.5, 1).setScrollFactor(0).setDepth(0).setAlpha(0.22);
 
         this.clouds = [];
         for (let i = 0; i < 8; i++) {
@@ -689,7 +691,7 @@ export class GameScene extends Phaser.Scene {
         if (this.textures.exists(key)) return key;
         const w = 512, hT = kind === 'far' ? 480 : 300;
         const g = this.add.graphics();
-        g.fillStyle(0x000000, 1);
+        g.fillStyle(0x1a0d08, 0.55);
         if (kind === 'far') {
             for (let i = 0; i < 18; i++) {
                 const bw = 24 + Math.random() * 42;

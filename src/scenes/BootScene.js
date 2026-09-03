@@ -351,16 +351,21 @@ export class BootScene extends Phaser.Scene {
         // Grassy ground tile (different from dirt) - brown dirt with grass top
         g.clear();
         g.fillStyle(0x5a8a37, 1);         // grass top
-        g.fillRect(0, 0, 32, 6);
+        g.fillRect(0, 0, 32, 8);
         g.fillStyle(0x6f4a28, 1);         // dirt below
-        g.fillRect(0, 6, 32, 26);
+        g.fillRect(0, 8, 32, 24);
+        // slightly darker grass under-blend for depth
+        g.fillStyle(0x4a7730, 1);
+        g.fillRect(0, 5, 32, 3);
         // lighter top edge highlight for platform readability
         g.fillStyle(0x8ac24a, 1);
         g.fillRect(0, 0, 32, 3);
-        // grass blades
+        // taller grass blades for a properly grassy look
         g.fillStyle(0x8abf54, 1);
-        for (let x = 2; x < 32; x += 6) {
-            g.fillRect(x, 0, 2, 4 + Math.random() * 3);
+        for (let x = 2; x < 32; x += 5) {
+            const bh = 8 + Math.random() * 8;
+            g.fillRect(x, 0, 2, bh);
+            g.fillRect(x + 2, 0, 1, bh * 0.6);
         }
         // small pebbles in dirt
         g.fillStyle(0x8a7a5a, 0.6);
@@ -369,15 +374,32 @@ export class BootScene extends Phaser.Scene {
         }
         g.generateTexture('ground_grass', 32, 32);
 
-        // Loose grass tuft (decor, walkable)
+        // Loose grass tuft (decor, walkable) - fuller, taller blades
         g.clear();
         g.fillStyle(0x6f9a44, 1);
-        g.fillTriangle(8, 16, 16, 0, 12, 16);
-        g.fillTriangle(16, 16, 24, 2, 21, 16);
-        g.fillTriangle(10, 16, 16, 6, 19, 16);
+        g.fillTriangle(5, 26, 14, 0, 17, 26);
+        g.fillTriangle(12, 26, 22, 0, 25, 26);
+        g.fillTriangle(20, 26, 31, 2, 33, 26);
+        g.fillTriangle(14, 26, 20, 11, 24, 26);
         g.fillStyle(0x4a6a2f, 1);
-        g.fillRect(8, 14, 14, 3);
-        g.generateTexture('grass_tuft', 30, 18);
+        g.fillRect(4, 23, 30, 4);
+        g.fillStyle(0x8abf54, 1);
+        g.fillTriangle(8, 23, 14, 5, 18, 23);
+        g.generateTexture('grass_tuft', 38, 28);
+
+        // Fuller grass bush (decor, walkable) - a denser, darker tuft
+        g.clear();
+        g.fillStyle(0x5a8a37, 1);
+        g.fillTriangle(4, 24, 12, 0, 16, 24);
+        g.fillTriangle(10, 24, 18, 0, 22, 24);
+        g.fillTriangle(16, 24, 26, 0, 30, 24);
+        g.fillTriangle(24, 24, 34, 2, 36, 24);
+        g.fillStyle(0x3f6a2a, 1);
+        g.fillRect(3, 21, 34, 4);
+        g.fillStyle(0x7db24a, 1);
+        g.fillEllipse(14, 18, 10, 8);
+        g.fillEllipse(24, 18, 10, 8);
+        g.generateTexture('grass_bush', 40, 26);
 
         // Stone / rock (decor, walkable obstacle)
         // NOTE: texture is 40x30 and the physics body fills the whole texture,
