@@ -29,6 +29,10 @@ export class WeaponSystem {
         // arriving back-to-back (e.g. a server echo or a listener firing twice),
         // which would stack two bombs on the local client from a single shot.
         this.lastRemoteShot = {};
+        // Debug counters surfaced on the in-game HUD (FIRE / REMOTE) so we can
+        // tell whether the client is spawning extra bombs during testing.
+        this.debugFire = 0;
+        this.debugRemote = 0;
     }
 
     get config() {
@@ -111,6 +115,9 @@ export class WeaponSystem {
 
         const bullet = this.projectiles.get(sx, sy, 'bullet');
         if (bullet) {
+            // Reusing a pooled bullet: cancel any stale despawn/explode timer
+            // left over from a previous shot so it can't fire early on this one.
+            if (bullet.despawnTimer) { bullet.despawnTimer.remove(false); bullet.despawnTimer = null; }
             bullet.setActive(true).setVisible(true);
             bullet.body.enable = true;
             bullet.setTint(cfg.color);
@@ -133,7 +140,9 @@ export class WeaponSystem {
 
             // Explosive projectiles (Pipe Bomb) now explode when their lifetime expires,
             // so they don't disappear mid-air. They also explode on contact with surfaces/players.
-            this.scene.time.delayedCall(cfg.bulletLifetime, () => {
+            this.debugFire++;
+            bullet.despawnTimer = this.scene.time.delayedCall(cfg.bulletLifetime, () => {
+                bullet.despawnTimer = null;
                 if (bullet.active) {
                     if (bullet.explosive) {
                         this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, null);
@@ -198,7 +207,9 @@ export class WeaponSystem {
             // Explosive projectiles (Pipe Bomb) detonate when their lifetime
             // expires so they never vanish mid-air - same behavior as the
             // local fire() path (the remote bomb is client-simulated too).
-            this.scene.time.delayedCall(cfg.bulletLifetime, () => {
+            this.debugRemote++;
+            bullet.despawnTimer = this.scene.time.delayedCall(cfg.bulletLifetime, () => {
+                bullet.despawnTimer = null;
                 if (bullet.active) {
                     if (bullet.explosive) {
                         this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, null);
@@ -245,6 +256,7 @@ export class WeaponSystem {
     }
 
     deactivateBullet(bullet) {
+        if (bullet.despawnTimer) { bullet.despawnTimer.remove(false); bullet.despawnTimer = null; }
         bullet.setActive(false).setVisible(false);
         bullet.body.enable = false;
         bullet.body.setVelocity(0, 0);

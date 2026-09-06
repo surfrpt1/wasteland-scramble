@@ -136,6 +136,12 @@ export class GameScene extends Phaser.Scene {
         window.__ws = this.touchControls;
         this.touchControls.onExit = () => this.scene.start('MenuScene');
 
+        // Fire/remote-spawn debug counters (visible while testing the double-bomb bug)
+        this.fireDbg = this.add.text(GAME_CONFIG.WIDTH / 2, 56, '', {
+            fontSize: '15px', fontFamily: 'monospace', color: '#ffff88',
+            backgroundColor: '#000000aa', fontStyle: 'bold',
+        }).setOrigin(0.5).setDepth(100);
+
         // M key toggles all sound
         const muteKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
         muteKey.on('down', () => {
@@ -1221,6 +1227,11 @@ export class GameScene extends Phaser.Scene {
             const hpColor = hp > 50 ? 0x44cc44 : (hp > 25 ? 0xccaa44 : 0xcc4444);
             this.healthBarFill.setFillStyle(hpColor);
             this.healthText.setText(hp);
+
+            if (this.fireDbg) {
+                const d = this.weapons[0];
+                this.fireDbg.setText(`FIRE=${d.debugFire} REMOTE=${d.debugRemote} AMMO=${d.mag[d.currentWeapon]}`);
+            }
 
             const ws = this.weapons[0];
             const mag = ws.mag[ws.currentWeapon];
