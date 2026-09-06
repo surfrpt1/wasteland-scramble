@@ -127,11 +127,15 @@ export class WeaponSystem {
             bullet.born = this.scene.time.now;
             bullet.skip = bullet.explosive ? 2 : 0;
 
-            // Explosive projectiles (Pipe Bomb) DO NOT auto-detonate when their
-            // lifetime expires - they only explode on contact with a surface,
-            // another player, or a thrown wall hit. So just despawn silently.
+            // Explosive projectiles (Pipe Bomb) now explode when their lifetime expires,
+            // so they don't disappear mid-air. They also explode on contact with surfaces/players.
             this.scene.time.delayedCall(cfg.bulletLifetime, () => {
-                if (bullet.active) this.deactivateBullet(bullet);
+                if (bullet.active) {
+                    if (bullet.explosive) {
+                        this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, null);
+                    }
+                    this.deactivateBullet(bullet);
+                }
             });
         }
 
