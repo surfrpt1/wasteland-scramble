@@ -140,7 +140,7 @@ export class GameScene extends Phaser.Scene {
         this.fireDbg = this.add.text(GAME_CONFIG.WIDTH / 2, 56, '', {
             fontSize: '15px', fontFamily: 'monospace', color: '#ffff88',
             backgroundColor: '#000000aa', fontStyle: 'bold',
-        }).setOrigin(0.5).setDepth(100);
+        }).setOrigin(0.5).setDepth(100).setScrollFactor(0);
 
         // M key toggles all sound
         const muteKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
