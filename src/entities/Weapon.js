@@ -222,6 +222,10 @@ export class WeaponSystem {
     }
 
     createExplosion(x, y, radius, damage, sourceIdx) {
+        // Note this blast as locally-rendered so the server's 'boom' echo for
+        // the same explosion is suppressed (one bomb -> one blast, not two).
+        if (this.scene && this.scene.recordLocalBlast) this.scene.recordLocalBlast(x, y);
+
         // Explosion sound
         if (this.audio) this.audio.explosion();
 

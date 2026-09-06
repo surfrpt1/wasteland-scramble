@@ -45,6 +45,7 @@ export class GameScene extends Phaser.Scene {
         this.initRoomName = data.roomName || null;
         this.initGameDuration = data.gameDuration || 0;
         this.lastStateSend = 0;
+        this.localBlasts = [];
     }
 
     create() {
@@ -353,7 +354,12 @@ export class GameScene extends Phaser.Scene {
             if (type === 'shot' && typeof angle === 'number') {
                 this.weapons[0].fireRemote(x, y, angle, weapon);
             } else if (type === 'boom' && x !== undefined && y !== undefined) {
-                this.weapons[0].createExplosion(x, y, radius || 80, 0);
+                // We already rendered this blast locally (camera-simulated impact,
+                // lifetime expiry, or a remote bullet's impact). Ignore the server
+                // echo so one bomb produces ONE blast, not two.
+                if (!this.isRecentBlast(x, y, radius || 80)) {
+                    this.weapons[0].createExplosion(x, y, radius || 80, 0);
+                }
             }
         });
 
@@ -1012,6 +1018,25 @@ export class GameScene extends Phaser.Scene {
         // Center the whole board horizontally in the top bar.
         this.boardContainer.x = GAME_CONFIG.WIDTH / 2 - this.boardContainer.width / 2;
         this.boardContainer.y = 22;
+    }
+
+    // Track blasts we've already rendered locally so a matching server 'boom'
+    // echo doesn't render the same explosion a second time.
+    recordLocalBlast(x, y) {
+        const now = this.time.now;
+        this.localBlasts = this.localBlasts.filter((b) => now - b.t < 800);
+        this.localBlasts.push({ x, y, t: now });
+    }
+
+    isRecentBlast(x, y, radius) {
+        const now = this.time.now;
+        this.localBlasts = this.localBlasts.filter((b) => now - b.t < 800);
+        const m = Math.max(radius || 80, 90);
+        return this.localBlasts.some((b) => {
+            const dx = b.x - x;
+            const dy = b.y - y;
+            return dx * dx + dy * dy < m * m;
+        });
     }
 
     update(time, delta) {
