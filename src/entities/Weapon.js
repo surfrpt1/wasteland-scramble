@@ -144,7 +144,10 @@ export class WeaponSystem {
             bullet.despawnTimer = this.scene.time.delayedCall(cfg.bulletLifetime, () => {
                 bullet.despawnTimer = null;
                 if (bullet.active) {
-                    if (bullet.explosive) {
+                    // Online: the server detonates expiring bombs and broadcasts
+                    // the single authoritative 'boom'. Only render locally when
+                    // there is no server to do it (practice/ffa).
+                    if (bullet.explosive && (!this.scene || this.scene.gameMode !== 'online')) {
                         this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, null);
                     }
                     this.deactivateBullet(bullet);
@@ -211,7 +214,7 @@ export class WeaponSystem {
             bullet.despawnTimer = this.scene.time.delayedCall(cfg.bulletLifetime, () => {
                 bullet.despawnTimer = null;
                 if (bullet.active) {
-                    if (bullet.explosive) {
+                    if (bullet.explosive && (!this.scene || this.scene.gameMode !== 'online')) {
                         this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, null);
                     }
                     this.deactivateBullet(bullet, true);

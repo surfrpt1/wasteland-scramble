@@ -1193,22 +1193,31 @@ export class GameScene extends Phaser.Scene {
                 }
             }
 
+            // In online mode the closest proxy for ANY contact is the server's
+            // own simulation: it broadcasts ONE authoritative 'boom' (same for
+            // the shooter and the opponent) at ITS impact point. Rendering a
+            // client-side blast here as well makes one bomb explode twice at
+            // (possibly different) spots when the two ballistic sims diverge
+            // (e.g. a corner clipped by one but not the other). So contact just
+            // stops the flying bullet; the blast comes from the server ack.
             if (hitPlayer) {
                 if (ownerIdx !== null) hitPlayer.lastHitFrom = ownerIdx;
                 if (bullet.explosive) {
-                    ws.createExplosion(bx, by, bullet.explosionRadius, bullet.damage, ownerIdx);
+                    if (this.gameMode !== 'online') {
+                        ws.createExplosion(bx, by, bullet.explosionRadius, bullet.damage, ownerIdx);
+                    }
                 } else {
                     hitPlayer.takeDamage(bullet.damage);
                 }
                 ws.deactivateBullet(bullet);
             } else if (hitSurface) {
-                if (bullet.explosive) {
+                if (bullet.explosive && this.gameMode !== 'online') {
                     ws.createExplosion(bx, by, bullet.explosionRadius, bullet.damage, ownerIdx);
                 }
                 ws.deactivateBullet(bullet);
             } else if (bx < 0 || bx > this.mapData.width * 32 || by < 0 || by > this.mapData.height * 32) {
                 // Left the map bounds - explode if explosive, otherwise despawn.
-                if (bullet.explosive) {
+                if (bullet.explosive && this.gameMode !== 'online') {
                     ws.createExplosion(bx, by, bullet.explosionRadius, bullet.damage, ownerIdx);
                 }
                 ws.deactivateBullet(bullet);
