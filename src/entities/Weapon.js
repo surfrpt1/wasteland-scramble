@@ -25,6 +25,10 @@ export class WeaponSystem {
             classType: Phaser.Physics.Arcade.Image,
             maxSize: 100,
         });
+        // Guard against duplicate 'shot' fx events for the same remote weapon
+        // arriving back-to-back (e.g. a server echo or a listener firing twice),
+        // which would stack two bombs on the local client from a single shot.
+        this.lastRemoteShot = {};
     }
 
     get config() {
@@ -152,6 +156,18 @@ export class WeaponSystem {
     // collide with the local player (see GameScene online wiring).
     fireRemote(x, y, angle, weaponKey) {
         const cfg = WEAPON_CONFIG[weaponKey] || WEAPON_CONFIG.SCRAP_RIFLE;
+
+        // Deduplicate: ignore an immediate re-fire of the SAME weapon within a
+        // fraction of its fire rate. The server only relays one 'shot' per real
+        // fire, so two within this window means a duplicate event, not a
+        // legitimate rapid shot (which can never beat the weapon's own fireRate).
+        const now = this.scene ? this.scene.time.now : 0;
+        if (this.lastRemoteShot) {
+            const prev = this.lastRemoteShot[weaponKey] || 0;
+            if (now - prev < cfg.fireRate * 0.5) return null;
+            this.lastRemoteShot[weaponKey] = now;
+        }
+
         const spread = (Math.random() - 0.5) * cfg.spread * 2;
         const finalAngle = angle + spread;
 
@@ -179,10 +195,16 @@ export class WeaponSystem {
             bullet.born = this.scene.time.now;
             bullet.skip = bullet.explosive ? 2 : 0;
 
-            // No auto-detonation on lifetime expiry - bombs only explode on
-            // impact with a surface or player.
+            // Explosive projectiles (Pipe Bomb) detonate when their lifetime
+            // expires so they never vanish mid-air - same behavior as the
+            // local fire() path (the remote bomb is client-simulated too).
             this.scene.time.delayedCall(cfg.bulletLifetime, () => {
-                if (bullet.active) this.deactivateBullet(bullet, true);
+                if (bullet.active) {
+                    if (bullet.explosive) {
+                        this.createExplosion(bullet.x, bullet.y, bullet.explosionRadius, bullet.damage, null);
+                    }
+                    this.deactivateBullet(bullet, true);
+                }
             });
         }
         return bullet;

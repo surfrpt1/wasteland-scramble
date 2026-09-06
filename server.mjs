@@ -18,7 +18,7 @@ const KILL_LIMIT = parseInt(process.env.KILL_LIMIT || '10', 10);
 // Constants mirrored from the client so the server can validate ballistics.
 const MAX_PLAYERS = 6;
 const MAX_HEALTH = 100;
-const TICK = 50;                 // 20 updates/sec
+const TICK = 40;                 // 25 updates/sec (smoother online sync)
 const HIT_RADIUS = 22;           // distance for a bullet to "hit" a player
 const PLAYER_RADIUS = 16;        // player-vs-player separation radius
 const MAX_SPEED = 600;           // sanity cap on reported position delta/tick
@@ -525,7 +525,27 @@ setInterval(() => {
         const activeBullets = [];
         for (const b of room.bullets) {
             b.life -= dt;
-            if (b.life <= 0) continue;
+            if (b.life <= 0) {
+                // Lifetime expired: an explosive (Pipe Bomb) detonates at its
+                // current position instead of silently vanishing mid-air, so
+                // the server's bomb behavior matches the client's local bomb.
+                if (b.weapon && b.weapon.explosive) {
+                    const hx = b.x, hy = b.y;
+                    for (const [pid, st] of room.state) {
+                        if (!st) continue;
+                        const hp = room.hp.get(pid);
+                        if (!hp || !hp.alive) continue;
+                        const d = Math.hypot(hx - st.x, hy - (st.y - 8));
+                        if (d < b.weapon.radius) {
+                            const falloff = 1 - (d / b.weapon.radius);
+                            // Launcher is NOT exempt - mirrors hitSomething().
+                            applyDamage(room, roomName, pid, b.owner, b.weapon.damage * falloff);
+                        }
+                    }
+                    emitRoom(roomName, 'fx', { type: 'boom', x: hx, y: hy, radius: b.weapon.radius });
+                }
+                continue;
+            }
 
             // Spawn grace: let the bullet clear the launch position before it is
             // tested against walls / players, so it never detonates on geometry

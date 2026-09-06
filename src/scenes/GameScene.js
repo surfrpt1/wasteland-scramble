@@ -1271,7 +1271,7 @@ export class GameScene extends Phaser.Scene {
         // --- ONLINE: update remote players + broadcast local state ---
         if (this.gameMode === 'online' && this.net) {
             if (this.netConnected) {
-                if (time - this.lastStateSend > 50) {
+                if (time - this.lastStateSend > 40) {
                     this.lastStateSend = time;
                     this.net.sendState(this.buildLocalState());
                 }
