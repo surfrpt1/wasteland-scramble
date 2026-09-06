@@ -33,7 +33,7 @@ const COLLIDERS = buildColliders();
 const WEAPONS = {
     SCRAP_RIFLE: { damage: 12, fireRate: 300, speed: 800, lifetime: 1800, spread: 0.05, explosive: false, radius: 0 },
     NAIL_GUN:    { damage: 5,  fireRate: 100, speed: 1000, lifetime: 1100, spread: 0.12, explosive: false, radius: 0 },
-    PIPE_BOMB:   { damage: 80, fireRate: 1500, speed: 400, lifetime: 3200, spread: 0,    explosive: true,  radius: 80 },
+    PIPE_BOMB:   { damage: 80, fireRate: 1500, speed: 400, lifetime: 5000, spread: 0,    explosive: true,  radius: 80 },
     ACID_SPRAYER:{ damage: 3,  fireRate: 50,  speed: 500,  lifetime: 700,  spread: 0.3,  explosive: false, radius: 0 },
 };
 

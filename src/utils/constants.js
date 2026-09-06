@@ -61,7 +61,7 @@ export const WEAPON_CONFIG = {
         damage: 80,
         fireRate: 1500,
         bulletSpeed: 400,
-        bulletLifetime: 3400,
+        bulletLifetime: 5000,
         spread: 0,
         ammo: 5,
         recoil: 200,
