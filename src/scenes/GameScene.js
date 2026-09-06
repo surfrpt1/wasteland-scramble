@@ -1176,7 +1176,10 @@ export class GameScene extends Phaser.Scene {
                 }
                 ws.deactivateBullet(bullet);
             } else if (bx < 0 || bx > this.mapData.width * 32 || by < 0 || by > this.mapData.height * 32) {
-                // Left the map bounds - despawn without exploding.
+                // Left the map bounds - explode if explosive, otherwise despawn.
+                if (bullet.explosive) {
+                    ws.createExplosion(bx, by, bullet.explosionRadius, bullet.damage, ownerIdx);
+                }
                 ws.deactivateBullet(bullet);
             }
         };
