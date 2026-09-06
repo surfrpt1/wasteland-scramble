@@ -44,6 +44,7 @@ export class GameScene extends Phaser.Scene {
         this.gameMode = data.mode || 'practice';
         this.initRoomName = data.roomName || null;
         this.initGameDuration = data.gameDuration || 0;
+        this.lastStateSend = 0;
     }
 
     create() {
@@ -1267,7 +1268,10 @@ export class GameScene extends Phaser.Scene {
         // --- ONLINE: update remote players + broadcast local state ---
         if (this.gameMode === 'online' && this.net) {
             if (this.netConnected) {
-                this.net.sendState(this.buildLocalState());
+                if (time - this.lastStateSend > 50) {
+                    this.lastStateSend = time;
+                    this.net.sendState(this.buildLocalState());
+                }
             }
             for (const [, rp] of this.remotes) {
                 rp.update(delta);

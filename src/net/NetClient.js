@@ -15,7 +15,13 @@ export class NetClient {
     }
 
     connect() {
-        this.socket = io(this.url, { transports: ['websocket', 'polling'] });
+        this.socket = io(this.url, {
+            transports: ['websocket'],
+            upgrade: false,
+            reconnectionAttempts: 10,
+            reconnectionDelay: 500,
+            timeout: 10000,
+        });
         this.socket.on('connect', () => this.connected = true);
         this.socket.on('disconnect', () => this.connected = false);
         this.socket.on('connect_error', (e) => this.emit('error', e));
